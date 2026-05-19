@@ -1,0 +1,1 @@
+"""MPi Market Intelligence Platform."""

@@ -1,0 +1,23 @@
+[project]
+name = "mpi-mip"
+version = "0.1.0"
+description = "MPi Market Intelligence Platform — cards outstanding forecasting"
+requires-python = ">=3.12"
+dependencies = [
+    "loguru>=0.7",
+    "openpyxl>=3.1",
+    "pandas>=2.2",
+    "playwright>=1.48",
+    "pyarrow>=17.0",
+    "pydantic>=2.9",
+]
+
+# Forecasting and dashboard dependencies will be added when Tasks 2 / 5 begin:
+#   prophet, plotly, jinja2, ruptures, scikit-learn
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29",
+    "jupyter>=1.1",
+    "ruff>=0.7",
+]

@@ -1,0 +1,63 @@
+# MPi MIP — runtime configuration
+# All paths are relative to the project root.
+# Column matching uses substring patterns against concatenated header rows
+# (case-insensitive). This survives RBI column reshuffles.
+
+[paths]
+raw_dir       = "data/raw"
+processed_dir = "data/processed"
+
+# ── RBI Payment System Indicators ──────────────────────────────────────────
+[rbi_psi]
+file_pattern    = "*Payment_System*"
+# Header rows to merge for column identification (0-indexed).
+# RBI uses multi-row merged headers. Inspect the actual file and tune if needed.
+header_rows     = [4, 5, 6]
+data_start_row  = 7
+
+# Each target column is identified by substrings that must ALL appear in the
+# column's concatenated header text. Patterns are case-insensitive.
+[rbi_psi.columns]
+date                            = ["month"]
+credit_card_vol_lakh            = ["credit", "card", "volume"]
+credit_card_val_cr              = ["credit", "card", "value"]
+debit_card_vol_lakh             = ["debit", "card", "volume"]
+debit_card_val_cr               = ["debit", "card", "value"]
+credit_cards_outstanding_lakh   = ["credit", "card", "outstanding"]
+debit_cards_outstanding_lakh    = ["debit", "card", "outstanding"]
+
+# ── NPCI UPI Product Statistics ────────────────────────────────────────────
+[npci_upi]
+file_pattern = "Product-Statistics-UPI*"
+
+# ── Data quality thresholds ────────────────────────────────────────────────
+[validation]
+max_null_pct       = 20.0
+max_date_gap_days  = 35
+min_rows           = 60
+
+# ── Major Indian card issuers (used in Task 2 per-issuer modelling) ────────
+[issuers]
+public_sector  = ["SBI", "PNB", "Bank of Baroda", "Canara Bank", "Union Bank"]
+private_sector = ["HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank", "IndusInd Bank"]
+foreign        = ["Citibank", "Standard Chartered", "HSBC"]
+small_finance  = ["AU Small Finance Bank", "Equitas SFB"]
+
+# ── Structural events (used as Prophet changepoints in Task 2) ─────────────
+[[structural_events]]
+date      = 2016-11-08
+name      = "Demonetisation"
+direction = "positive"
+notes     = "Cash ban forced rapid digital payment adoption."
+
+[[structural_events]]
+date      = 2020-03-25
+name      = "COVID lockdown"
+direction = "negative"
+notes     = "Sharp drop in in-person transactions for ~4 months."
+
+[[structural_events]]
+date      = 2022-01-01
+name      = "UPI inflection"
+direction = "negative_debit"
+notes     = "UPI volumes overtake debit card volumes at point of sale."

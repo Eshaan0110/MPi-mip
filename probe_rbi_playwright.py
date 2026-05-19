@@ -1,5 +1,8 @@
 """
-Playwright probe v3 — navigate into Statistics > Payment Systems
+Playwright probe — navigate into Statistics > Payment Systems on RBI DBIE.
+
+Exploratory script for understanding the portal's structure. Kept as
+reference for the eventual automated downloader.
 """
 
 import asyncio
@@ -17,7 +20,6 @@ async def probe():
         await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(8000)
 
-        # Click "Statistics" in the left nav
         print("Clicking Statistics...")
         await page.click("text=Statistics")
         await page.wait_for_timeout(4000)
@@ -29,7 +31,7 @@ async def probe():
 
         links = await page.eval_on_selector_all(
             "a[href]",
-            "els => els.map(e => ({text: e.innerText.trim(), href: e.href}))"
+            "els => els.map(e => ({text: e.innerText.trim(), href: e.href}))",
         )
         print(f"\nLinks found: {len(links)}")
         for link in links:
