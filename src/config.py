@@ -19,11 +19,28 @@ class PathsConfig(BaseModel):
     processed_dir: Path
 
 
+class PsiColumnSpec(BaseModel):
+    """How to locate one PSI column: by parent section, own label, and unit."""
+    section: list[str] = Field(default_factory=list)
+    section_not: list[str] = Field(default_factory=list)
+    column: list[str]
+    unit: list[str]
+
+
+class PsiFormatConfig(BaseModel):
+    """Layout for one PSI format variant (old or new)."""
+    sheet_match: str
+    label_row: int
+    unit_row: int
+    data_start_row: int
+    date_col: int
+    columns: dict[str, PsiColumnSpec]
+
+
 class RbiPsiConfig(BaseModel):
     file_pattern: str
-    header_rows: list[int]
-    data_start_row: int
-    columns: dict[str, list[str]]
+    date_format: str
+    formats: dict[str, PsiFormatConfig]
 
 
 class NpciUpiConfig(BaseModel):
@@ -55,7 +72,7 @@ class Settings(BaseModel):
 def load_settings(config_path: Path | None = None) -> Settings:
     """Load and validate config/settings.toml.
 
-    Resolves relative paths to project-root absolute paths and ensures
+    Resolves relative paths to project-root absolute paths and ensures the
     data directories exist on disk.
     """
     if config_path is None:
@@ -69,7 +86,6 @@ def load_settings(config_path: Path | None = None) -> Settings:
 
     settings = Settings(**raw)
 
-    # Resolve relative paths against project root
     if not settings.paths.raw_dir.is_absolute():
         settings.paths.raw_dir = PROJECT_ROOT / settings.paths.raw_dir
     if not settings.paths.processed_dir.is_absolute():

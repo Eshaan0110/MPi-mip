@@ -1,7 +1,15 @@
 # MPi MIP — runtime configuration
 # All paths are relative to the project root.
-# Column matching uses substring patterns against concatenated header rows
-# (case-insensitive). This survives RBI column reshuffles.
+#
+# RBI PSI ships in two formats that together span Apr 2004 to present:
+#   - Old format: Apr 2004 - Oct 2019 (sheet "Old Format")
+#   - New format: Nov 2019 - present  (sheet "New Format")
+# The pipeline auto-detects format by sheet name, parses each, and stitches
+# them into one continuous series.
+#
+# Columns are matched by (section + label + unit) substring patterns rather
+# than fixed positions. This survives RBI's format change in Nov 2019, where
+# every column position moved but the labels stayed recognisable.
 
 [paths]
 raw_dir       = "data/raw"
@@ -9,22 +17,78 @@ processed_dir = "data/processed"
 
 # ── RBI Payment System Indicators ──────────────────────────────────────────
 [rbi_psi]
-file_pattern    = "*Payment_System*"
-# Header rows to merge for column identification (0-indexed).
-# RBI uses multi-row merged headers. Inspect the actual file and tune if needed.
-header_rows     = [4, 5, 6]
-data_start_row  = 7
+file_pattern = "*Payment_System*"
+date_format  = "%b-%Y"
 
-# Each target column is identified by substrings that must ALL appear in the
-# column's concatenated header text. Patterns are case-insensitive.
-[rbi_psi.columns]
-date                            = ["month"]
-credit_card_vol_lakh            = ["credit", "card", "volume"]
-credit_card_val_cr              = ["credit", "card", "value"]
-debit_card_vol_lakh             = ["debit", "card", "volume"]
-debit_card_val_cr               = ["debit", "card", "value"]
-credit_cards_outstanding_lakh   = ["credit", "card", "outstanding"]
-debit_cards_outstanding_lakh    = ["debit", "card", "outstanding"]
+# --- New format (Nov 2019 onward) ---
+[rbi_psi.formats.new]
+sheet_match    = "new"     # matched (case-insensitive) against the sheet name
+label_row      = 5
+unit_row       = 6
+data_start_row = 7
+date_col       = 1
+
+[rbi_psi.formats.new.columns.credit_cards_outstanding_lakh]
+section = ["number of cards"]
+column  = ["credit"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.debit_cards_outstanding_lakh]
+section = ["number of cards"]
+column  = ["debit"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.credit_card_vol_lakh]
+section = ["card payments"]
+column  = ["credit"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.credit_card_val_cr]
+section = ["card payments"]
+column  = ["credit"]
+unit    = ["value"]
+[rbi_psi.formats.new.columns.debit_card_vol_lakh]
+section = ["card payments"]
+column  = ["debit"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.debit_card_val_cr]
+section = ["card payments"]
+column  = ["debit"]
+unit    = ["value"]
+
+# --- Old format (Apr 2004 - Oct 2019) ---
+[rbi_psi.formats.old]
+sheet_match    = "old"
+label_row      = 3
+unit_row       = 4
+data_start_row = 5
+date_col       = 1
+
+[rbi_psi.formats.old.columns.credit_cards_outstanding_lakh]
+section = ["outstanding"]
+column  = ["credit"]
+unit    = ["volume"]
+[rbi_psi.formats.old.columns.debit_cards_outstanding_lakh]
+section = ["outstanding"]
+column  = ["debit"]
+unit    = ["volume"]
+[rbi_psi.formats.old.columns.credit_card_vol_lakh]
+section     = ["cards"]
+section_not = ["outstanding"]
+column      = ["credit"]
+unit        = ["volume"]
+[rbi_psi.formats.old.columns.credit_card_val_cr]
+section     = ["cards"]
+section_not = ["outstanding"]
+column      = ["credit"]
+unit        = ["value"]
+[rbi_psi.formats.old.columns.debit_card_vol_lakh]
+section     = ["cards"]
+section_not = ["outstanding"]
+column      = ["debit"]
+unit        = ["volume"]
+[rbi_psi.formats.old.columns.debit_card_val_cr]
+section     = ["cards"]
+section_not = ["outstanding"]
+column      = ["debit"]
+unit        = ["value"]
 
 # ── NPCI UPI Product Statistics ────────────────────────────────────────────
 [npci_upi]
@@ -43,12 +107,18 @@ private_sector = ["HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank",
 foreign        = ["Citibank", "Standard Chartered", "HSBC"]
 small_finance  = ["AU Small Finance Bank", "Equitas SFB"]
 
-# ── Structural events (used as Prophet changepoints in Task 2) ─────────────
+# ── Structural events (used as Prophet changepoints in Task 2 / T3) ────────
 [[structural_events]]
 date      = 2016-11-08
 name      = "Demonetisation"
 direction = "positive"
 notes     = "Cash ban forced rapid digital payment adoption."
+
+[[structural_events]]
+date      = 2019-11-01
+name      = "PSI format change"
+direction = "definitional_break"
+notes     = "RBI changed card-payment definitions. Transaction volume series may not be directly comparable across this boundary; cards-outstanding counts are unaffected."
 
 [[structural_events]]
 date      = 2020-03-25

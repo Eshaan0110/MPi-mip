@@ -1,12 +1,15 @@
 """Schema and data-quality validation for ingested files.
 
-Three responsibilities:
-  1. Resolve column names to indices via header-text matching.
+Responsibilities:
+  1. Resolve PSI columns by (section + label + unit) patterns, handling
+     RBI's merged headers and the duplicate "Credit Cards" label that
+     appears under both the transactions and the cards-outstanding sections.
   2. Run quality checks (min rows, null %, date gaps).
   3. Compute SHA256 hashes to distinguish new files from re-runs.
 """
 
 import hashlib
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -17,77 +20,120 @@ class SchemaValidationError(Exception):
     """Raised when an ingested file fails schema or quality validation."""
 
 
-def find_column_index(
-    header_rows: list[tuple],
-    patterns: list[str],
-) -> int | None:
-    """Return the column index whose combined header text contains ALL patterns.
+# A top-level section header looks like "5 Cards" or "8 Cards Outstanding":
+# an integer, whitespace, then text. Sub-items like "5.1 ..." have a dot in
+# the number and are deliberately excluded.
+_SECTION_RE = re.compile(r"^\s*\d+\s+\S")
 
-    RBI uses multi-row merged headers, so we concatenate the cell values from
-    each row in `header_rows` for a given column, then test patterns
-    (case-insensitive substring) against that combined string.
 
-    Args:
-        header_rows: list of row tuples — each tuple holds one row's cells
-        patterns: substrings that must all appear in the combined header text
+def _forward_fill(row: tuple) -> list:
+    """Replace blank cells with the nearest non-blank value to the left.
 
-    Returns:
-        Column index, or None if no column matches.
+    Excel stores a merged cell's value only in its top-left cell, leaving the
+    spanned cells empty. RBI merges the parent label across a volume/value
+    pair, so the "value" column's own label cell is blank. Forward-filling
+    lets that column inherit the volume column's label.
     """
-    if not header_rows:
-        return None
-
-    n_cols = max(len(r) for r in header_rows)
-    patterns_lower = [p.lower() for p in patterns]
-
-    for col_idx in range(n_cols):
-        parts: list[str] = []
-        for row in header_rows:
-            if col_idx < len(row) and row[col_idx] is not None:
-                parts.append(str(row[col_idx]).lower())
-        combined = " ".join(parts)
-
-        if all(p in combined for p in patterns_lower):
-            return col_idx
-
-    return None
+    out: list = []
+    last = None
+    for v in row:
+        if v is not None and str(v).strip():
+            last = v
+        out.append(last)
+    return out
 
 
-def resolve_columns(
-    header_rows: list[tuple],
-    expected: dict[str, list[str]],
+def _is_section_header(label) -> bool:
+    if label is None:
+        return False
+    return bool(_SECTION_RE.match(str(label)))
+
+
+def _section_per_column(label_row: tuple) -> list:
+    """For each column, the nearest section header at or to its left."""
+    sections: list = []
+    current = None
+    for v in label_row:
+        if _is_section_header(v):
+            current = v
+        sections.append(current)
+    return sections
+
+
+def resolve_psi_columns(
+    rows: list,
+    label_row_idx: int,
+    unit_row_idx: int,
+    expected: dict[str, dict],
 ) -> dict[str, int]:
-    """Resolve every expected column to its index, raising loudly on any miss.
+    """Resolve PSI target columns using section + column + unit patterns.
 
     Args:
-        header_rows: header rows from the source file
-        expected:    mapping of column name -> list of substring patterns
+        rows:          all rows from the sheet (tuples of cell values)
+        label_row_idx: row holding the item labels
+        unit_row_idx:  row holding the units (Volume / Value)
+        expected:      target_name -> {section, section_not, column, unit}
+                       where each value is a list of case-insensitive
+                       substrings. `section`, `column`, `unit` must ALL match;
+                       `section_not` must NOT appear in the section.
 
     Returns:
-        Mapping of column name -> resolved column index.
+        target_name -> resolved column index.
 
     Raises:
-        SchemaValidationError: if any expected column cannot be located.
+        SchemaValidationError if any target cannot be located.
     """
-    resolved: dict[str, int] = {}
-    missing: list[tuple[str, list[str]]] = []
+    label_row = rows[label_row_idx]
+    unit_row = rows[unit_row_idx]
 
-    for col_name, patterns in expected.items():
-        idx = find_column_index(header_rows, patterns)
-        if idx is None:
-            missing.append((col_name, patterns))
+    labels = _forward_fill(label_row)
+    units = _forward_fill(unit_row)
+    sections = _section_per_column(label_row)
+
+    n = max(len(labels), len(units), len(sections))
+
+    def cell(seq: list, i: int) -> str:
+        return str(seq[i]).lower() if i < len(seq) and seq[i] is not None else ""
+
+    resolved: dict[str, int] = {}
+    missing: list[tuple[str, dict]] = []
+
+    for name, spec in expected.items():
+        sec_inc = [p.lower() for p in spec.get("section", [])]
+        sec_exc = [p.lower() for p in spec.get("section_not", [])]
+        col_inc = [p.lower() for p in spec.get("column", [])]
+        uni_inc = [p.lower() for p in spec.get("unit", [])]
+
+        found = None
+        for j in range(n):
+            sec = cell(sections, j)
+            lab = cell(labels, j)
+            uni = cell(units, j)
+            if (
+                all(p in sec for p in sec_inc)
+                and not any(p in sec for p in sec_exc)
+                and all(p in lab for p in col_inc)
+                and all(p in uni for p in uni_inc)
+            ):
+                found = j
+                break
+
+        if found is None:
+            missing.append((name, spec))
         else:
-            resolved[col_name] = idx
-            logger.debug(f"Resolved '{col_name}' -> column index {idx}")
+            resolved[name] = found
+            logger.debug(
+                f"Resolved '{name}' -> col {found} "
+                f"[section='{cell(sections, found)[:28]}', "
+                f"label='{cell(labels, found)[:28]}', "
+                f"unit='{cell(units, found)[:18]}']"
+            )
 
     if missing:
-        details = "\n  ".join(
-            f"'{name}' (patterns: {pats})" for name, pats in missing
-        )
+        details = "\n  ".join(f"'{n}' (spec: {s})" for n, s in missing)
         raise SchemaValidationError(
-            f"Could not locate {len(missing)} expected column(s):\n  {details}\n"
-            f"Inspect the file's actual headers and update "
-            f"config/settings.toml [rbi_psi.columns]."
+            f"Could not locate {len(missing)} PSI column(s):\n  {details}\n"
+            f"Inspect the file's headers and update config/settings.toml."
         )
 
     return resolved
@@ -103,8 +149,7 @@ def check_data_quality(
 ) -> None:
     """Run quality checks on a parsed DataFrame.
 
-    Hard failures raise SchemaValidationError.
-    Soft issues are logged as warnings.
+    Hard failures raise SchemaValidationError. Soft issues log warnings.
     """
     if len(df) < min_rows:
         raise SchemaValidationError(
@@ -112,7 +157,6 @@ def check_data_quality(
             f"Parsing likely failed or the source file is incomplete."
         )
 
-    # Null percentage per column
     null_pct = (df.isnull().mean() * 100).to_dict()
     for col, pct in null_pct.items():
         if pct > max_null_pct:
@@ -121,7 +165,6 @@ def check_data_quality(
                 f"(threshold {max_null_pct}%)"
             )
 
-    # Date gaps
     if date_col in df.columns and len(df) > 1:
         sorted_dates = df[date_col].sort_values().reset_index(drop=True)
         gaps = sorted_dates.diff().dt.days.dropna()
@@ -135,13 +178,11 @@ def check_data_quality(
                 for i in range(len(gaps))
                 if gaps.iloc[i] > max_date_gap_days
             ]
-            logger.warning(
-                f"Date gaps exceed {max_date_gap_days} days: {big}"
-            )
+            logger.warning(f"Date gaps exceed {max_date_gap_days} days: {big}")
 
 
 def file_sha256(filepath: Path) -> str:
-    """Compute the SHA256 hash of a file."""
+    """Compute the SHA256 hash of a single file."""
     h = hashlib.sha256()
     with filepath.open("rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
@@ -149,24 +190,27 @@ def file_sha256(filepath: Path) -> str:
     return h.hexdigest()
 
 
-def detect_freshness(
-    filepath: Path,
-    hash_record_path: Path,
-) -> tuple[bool, str]:
-    """Compare the current file hash to the previously recorded one.
+def combined_hash(filepaths: list[Path]) -> str:
+    """Compute one SHA256 over several files (sorted, for determinism)."""
+    h = hashlib.sha256()
+    for fp in sorted(filepaths):
+        with fp.open("rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    return h.hexdigest()
 
-    Returns:
-        (is_new, current_hash) — is_new is True if the hash differs from
-        the stored value, or if no prior hash exists.
-    """
-    current = file_sha256(filepath)
+
+def detect_freshness(
+    current_hash: str,
+    hash_record_path: Path,
+) -> bool:
+    """Return True if current_hash differs from the stored hash (or none stored)."""
     if not hash_record_path.exists():
-        return True, current
-    previous = hash_record_path.read_text().strip()
-    return (current != previous), current
+        return True
+    return current_hash != hash_record_path.read_text().strip()
 
 
 def record_hash(hash_record_path: Path, hash_value: str) -> None:
-    """Persist a file hash for next-run freshness comparison."""
+    """Persist a hash for next-run freshness comparison."""
     hash_record_path.parent.mkdir(parents=True, exist_ok=True)
     hash_record_path.write_text(hash_value)

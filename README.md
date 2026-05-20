@@ -42,18 +42,30 @@ uv sync
 
 ## Running the ingestion pipelines
 
-### RBI Payment System Indicators
+### RBI Payment System Indicators (two formats)
 
-1. Download the latest PSI Excel from RBI DBIE → Statistics → Financial
-   Sector → Payment Systems. Save the file to `data/raw/`.
+RBI publishes PSI in two layouts that together span Apr 2004 to present:
+the old format (sheet `Old Format`, Apr 2004 - Oct 2019) and the new format
+(sheet `New Format`, Nov 2019 - present). Download both from RBI DBIE →
+Statistics → Financial Sector → Payment Systems (Monthly) and save them to
+`data/raw/`.
 
-2. Run:
+Run:
 
-   ```bash
-   uv run python -m src.ingestion.rbi
-   ```
+```bash
+uv run python -m src.ingestion.rbi
+```
 
-   Output: `data/processed/rbi_psi_cards.parquet` and `.csv`.
+The pipeline auto-detects each file's format by sheet name, resolves columns
+by header pattern (not fixed position), parses both, and stitches them into
+one continuous series. Output: `data/processed/rbi_psi_cards.parquet` and
+`.csv`, with a `source_format` column flagging old vs new rows.
+
+Note: transaction volumes go back to Apr 2004, but RBI only began reporting
+cards-outstanding counts in Apr 2006 (the earlier months are null for those
+columns). The Nov 2019 format change is registered as a structural event in
+`config/settings.toml` because card-payment definitions changed at that
+boundary.
 
 ### NPCI UPI Statistics
 
