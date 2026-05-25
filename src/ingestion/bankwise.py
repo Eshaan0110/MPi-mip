@@ -97,7 +97,7 @@ _SKIP_KEYWORDS = {
     "sr. no", "sr no",
 }
 
-_MIN_MONTHS_FOR_MODELLING = 24
+_MIN_MONTHS_FOR_MODELLING = 48  # Rahul: top 20 only; <48 months = out of scope for individual modelling
 
 # Month name → number for sheet-name parsing
 _MONTH_MAP = {
@@ -542,17 +542,35 @@ def _parse_summary_sheet(ws, card_type: str) -> list[dict]:
 # ── Name standardisation ──────────────────────────────────────────────────
 
 def _standardise_bank_names(df: pd.DataFrame, settings: Settings) -> pd.DataFrame:
-    canonical_map: dict[str, str] = {}
+    """Map raw bank names to canonical names from settings.toml issuers list.
+
+    Special cases handled:
+    - 'SBI' raw → 'State Bank Of India' canonical
+    - State Bank associates (merged into SBI 2017) → kept separate historically
+    """
+    # Build lookup: raw_substring (upper) → canonical name
+    # Earlier entries in the list take priority over later ones
+    canonical_map: list[tuple[str, str]] = []
     for _sector, names in settings.issuers.items():
         for name in names:
-            canonical_map[name.upper()] = name
+            canonical_map.append((name.upper(), name))
+
+    # Explicit overrides for known raw-name variants
+    _OVERRIDES = {
+        "SBI": "State Bank Of India",
+    }
 
     def _find_canonical(raw: str) -> str:
-        raw_up = raw.upper()
-        for key_up, canonical in canonical_map.items():
+        raw_stripped = raw.strip()
+        # Check explicit overrides first (exact match)
+        if raw_stripped.upper() in _OVERRIDES:
+            return _OVERRIDES[raw_stripped.upper()]
+        # Substring match against canonical list
+        raw_up = raw_stripped.upper()
+        for key_up, canonical in canonical_map:
             if key_up in raw_up:
                 return canonical
-        return raw.title()
+        return raw_stripped.title()
 
     df["bank_name"] = df["bank_name_raw"].apply(_find_canonical)
     return df

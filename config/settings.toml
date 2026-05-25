@@ -182,9 +182,12 @@ min_rows           = 60
 
 # ── Major Indian card issuers (used in Task 2 per-issuer modelling) ────────
 [issuers]
-public_sector  = ["SBI", "PNB", "Bank of Baroda", "Canara Bank", "Union Bank"]
-private_sector = ["HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank", "IndusInd Bank"]
-foreign        = ["Citibank", "Standard Chartered", "HSBC"]
+# Canonical names used in bank_name output column.
+# Strings listed are substrings matched (case-insensitive) against raw bank names.
+# Order matters — first match wins. Put longer/more specific strings first.
+public_sector  = ["State Bank Of India", "SBI", "PNB", "Punjab National Bank", "Bank of Baroda", "Canara Bank", "Union Bank", "Bank Of India", "Bank Of Maharashtra", "Indian Bank", "Indian Overseas Bank", "UCO Bank", "Punjab And Sind Bank", "Central Bank Of India"]
+private_sector = ["HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank", "IndusInd Bank", "Yes Bank", "IDFC First Bank", "RBL Bank", "Federal Bank", "Bandhan Bank", "South Indian Bank", "Karur Vysya Bank", "CSB Bank", "DCB Bank"]
+foreign        = ["Citibank", "Standard Chartered", "HSBC", "American Express", "Deutsche Bank", "DBS"]
 small_finance  = ["AU Small Finance Bank", "Equitas SFB"]
 
 # ── Structural events (used as Prophet changepoints in Task 2 / T3) ────────
@@ -211,6 +214,12 @@ date      = 2020-04-01
 name      = "COVID lockdown"
 direction = "negative"
 notes     = "Sharp drop in in-person transactions. New card issuance halted for ~2 months (Apr-May 2020). Model as pulse dummy."
+
+[[structural_events]]
+date      = 2022-07-01
+name      = "RBI card validity extension to 7 years"
+direction = "positive_dc"
+notes     = "RBI Master Directions on Credit Card and Debit Card – Issuance and Conduct Directions, 2022 (effective Jul 1 2022). Extended card validity from 5 to 7 years, mechanically reducing attrition rate of debit cards outstanding. Likely explains part of DC outstanding resilience post-2022 despite falling usage."
 
 [[structural_events]]
 date      = 2022-01-01
