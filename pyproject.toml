@@ -10,6 +10,7 @@ dependencies = [
     "playwright>=1.48",
     "pyarrow>=17.0",
     "pydantic>=2.9",
+    "xlrd>=2.0.2",
 ]
 
 # Forecasting and dashboard dependencies will be added when Tasks 2 / 5 begin:
