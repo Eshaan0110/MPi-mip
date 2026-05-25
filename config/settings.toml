@@ -1,19 +1,28 @@
 # MPi MIP — runtime configuration
 # All paths are relative to the project root.
 #
-# RBI PSI ships in two formats that together span Apr 2004 to present:
-#   - Old format: Apr 2004 - Oct 2019 (sheet "Old Format")
-#   - New format: Nov 2019 - present  (sheet "New Format")
-# The pipeline auto-detects format by sheet name, parses each, and stitches
-# them into one continuous series.
+# ── Raw data folder structure ──────────────────────────────────────────────
 #
-# Columns are matched by (section + label + unit) substring patterns rather
-# than fixed positions. This survives RBI's format change in Nov 2019, where
-# every column position moved but the labels stayed recognisable.
+#   data/raw/
+#   ├── rbi_psi/          ← Payment_System_Indicators_old.xlsx + _new.xlsx
+#   ├── rbi_bankwise/     ← RBI_Data_Debit_Credit_1.xlsx
+#   ├── rbi_repo_rate/    ← RepoRate2007.XLSX
+#   ├── npci_upi/         ← Product-Statistics-UPI-YYYY.xlsx  (one per year)
+#   ├── npci_p2m/         ← Ecosystem-Statistics-UPI-P2p-and-p2m-YYYY-Mon.xlsx
+#   ├── mospi_cpi/        ← CPI.xlsx
+#   └── pmjdy/            ← PMJDY month-wise progress CSV  (data.gov.in)
+#
+# Drop files into the matching folder. Never dump into data/raw/ directly.
 
 [paths]
-raw_dir       = "data/raw"
-processed_dir = "data/processed"
+processed_dir    = "data/processed"
+rbi_psi_dir      = "data/raw/rbi_psi"
+rbi_bankwise_dir = "data/raw/rbi_bankwise"
+rbi_repo_dir     = "data/raw/rbi_repo_rate"
+npci_upi_dir     = "data/raw/npci_upi"
+npci_p2m_dir     = "data/raw/npci_p2m"
+mospi_cpi_dir    = "data/raw/mospi_cpi"
+pmjdy_dir        = "data/raw/pmjdy"
 
 # ── RBI Payment System Indicators ──────────────────────────────────────────
 [rbi_psi]
@@ -22,36 +31,87 @@ date_format  = "%b-%Y"
 
 # --- New format (Nov 2019 onward) ---
 [rbi_psi.formats.new]
-sheet_match    = "new"     # matched (case-insensitive) against the sheet name
+sheet_match    = "new"
 label_row      = 5
 unit_row       = 6
 data_start_row = 7
 date_col       = 1
 
+# ── Cards outstanding (targets) ────────────────────────────────────────────
 [rbi_psi.formats.new.columns.credit_cards_outstanding_lakh]
 section = ["number of cards"]
-column  = ["credit"]
+column  = ["1.1 credit cards"]
 unit    = ["volume"]
 [rbi_psi.formats.new.columns.debit_cards_outstanding_lakh]
 section = ["number of cards"]
-column  = ["debit"]
+column  = ["1.2 debit cards"]
 unit    = ["volume"]
+
+# ── CC card payments — combined and POS/other split ────────────────────────
 [rbi_psi.formats.new.columns.credit_card_vol_lakh]
 section = ["card payments"]
-column  = ["credit"]
+column  = ["4.1 credit cards"]
 unit    = ["volume"]
 [rbi_psi.formats.new.columns.credit_card_val_cr]
 section = ["card payments"]
-column  = ["credit"]
+column  = ["4.1 credit cards"]
 unit    = ["value"]
+[rbi_psi.formats.new.columns.credit_card_pos_vol_lakh]
+section = ["card payments"]
+column  = ["4.1.1 pos"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.credit_card_pos_val_cr]
+section = ["card payments"]
+column  = ["4.1.1 pos"]
+unit    = ["value"]
+[rbi_psi.formats.new.columns.credit_card_other_vol_lakh]
+section     = ["card payments"]
+column      = ["4.1.2 others"]
+unit        = ["volume"]
+[rbi_psi.formats.new.columns.credit_card_other_val_cr]
+section     = ["card payments"]
+column      = ["4.1.2 others"]
+unit        = ["value"]
+
+# ── DC card payments — combined and POS/other (ATM) split ─────────────────
 [rbi_psi.formats.new.columns.debit_card_vol_lakh]
 section = ["card payments"]
-column  = ["debit"]
+column  = ["4.2 debit cards"]
 unit    = ["volume"]
 [rbi_psi.formats.new.columns.debit_card_val_cr]
 section = ["card payments"]
-column  = ["debit"]
+column  = ["4.2 debit cards"]
 unit    = ["value"]
+[rbi_psi.formats.new.columns.debit_card_pos_vol_lakh]
+section = ["card payments"]
+column  = ["4.2.1 pos"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.debit_card_pos_val_cr]
+section = ["card payments"]
+column  = ["4.2.1 pos"]
+unit    = ["value"]
+[rbi_psi.formats.new.columns.debit_card_other_vol_lakh]
+section     = ["card payments"]
+column      = ["4.2.2 others"]
+unit        = ["volume"]
+[rbi_psi.formats.new.columns.debit_card_other_val_cr]
+section     = ["card payments"]
+column      = ["4.2.2 others"]
+unit        = ["value"]
+
+# ── Infrastructure regressors ──────────────────────────────────────────────
+[rbi_psi.formats.new.columns.pos_terminals_lakh]
+section = ["number of pos terminals"]
+column  = ["pos"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.upi_qr_lakh]
+section = ["upi qr"]
+column  = ["upi"]
+unit    = ["volume"]
+[rbi_psi.formats.new.columns.bharat_qr_lakh]
+section = ["bharat qr"]
+column  = ["bharat"]
+unit    = ["volume"]
 
 # --- Old format (Apr 2004 - Oct 2019) ---
 [rbi_psi.formats.old]
@@ -94,6 +154,26 @@ unit        = ["value"]
 [npci_upi]
 file_pattern = "Product-Statistics-UPI*"
 
+# ── NPCI UPI P2M Ecosystem Statistics ──────────────────────────────────────
+[npci_p2m]
+file_pattern = "Ecosystem-Statistics-UPI-P2p-and-p2m-transactions-*.xlsx"
+
+# ── RBI Bank-wise ATM/POS/Card Statistics ──────────────────────────────────
+[rbi_bankwise]
+file_pattern = "RBI_Data_Debit_Credit*.xlsx"
+
+# ── RBI Repo Rate (Handbook of Statistics Table 43) ────────────────────────
+[rbi_repo]
+file_pattern = "RepoRate*.xlsx"
+
+# ── MoSPI CPI ──────────────────────────────────────────────────────────────
+[mospi_cpi]
+file_pattern = "CPI*.xlsx"
+
+# ── PMJDY RuPay card series ─────────────────────────────────────────────────
+[pmjdy]
+file_pattern = "*.csv"
+
 # ── Data quality thresholds ────────────────────────────────────────────────
 [validation]
 max_null_pct       = 20.0
@@ -109,25 +189,37 @@ small_finance  = ["AU Small Finance Bank", "Equitas SFB"]
 
 # ── Structural events (used as Prophet changepoints in Task 2 / T3) ────────
 [[structural_events]]
+date      = 2014-08-15
+name      = "PMJDY launch"
+direction = "positive"
+notes     = "Jan Dhan Yojana launched — 386M RuPay debit cards issued 2014-2017. Structural step-up in debit outstanding distinct from demonetisation spike."
+
+[[structural_events]]
 date      = 2016-11-08
 name      = "Demonetisation"
 direction = "positive"
-notes     = "Cash ban forced rapid digital payment adoption."
+notes     = "Cash ban forced rapid digital payment adoption. Sharp spike in debit card issuance."
 
 [[structural_events]]
 date      = 2019-11-01
 name      = "PSI format change"
 direction = "definitional_break"
-notes     = "RBI changed card-payment definitions. Transaction volume series may not be directly comparable across this boundary; cards-outstanding counts are unaffected."
+notes     = "RBI changed card-payment definitions. Transaction volume series not directly comparable across this boundary; cards-outstanding counts are unaffected."
 
 [[structural_events]]
-date      = 2020-03-25
+date      = 2020-04-01
 name      = "COVID lockdown"
 direction = "negative"
-notes     = "Sharp drop in in-person transactions for ~4 months."
+notes     = "Sharp drop in in-person transactions. New card issuance halted for ~2 months (Apr-May 2020). Model as pulse dummy."
 
 [[structural_events]]
 date      = 2022-01-01
 name      = "UPI inflection"
 direction = "negative_debit"
-notes     = "UPI volumes overtake debit card volumes at point of sale."
+notes     = "UPI P2M volumes overtake debit card POS volumes. Primary ongoing displacement driver for debit outstanding."
+
+[[structural_events]]
+date      = 2023-11-01
+name      = "RBI unsecured lending tightening"
+direction = "negative_credit"
+notes     = "RBI raised risk weights on unsecured consumer credit including credit cards. Banks slowed credit card issuance immediately."

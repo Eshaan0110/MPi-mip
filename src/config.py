@@ -15,8 +15,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class PathsConfig(BaseModel):
-    raw_dir: Path
     processed_dir: Path
+    rbi_psi_dir: Path
+    rbi_bankwise_dir: Path
+    rbi_repo_dir: Path
+    npci_upi_dir: Path
+    npci_p2m_dir: Path
+    mospi_cpi_dir: Path
+    pmjdy_dir: Path
 
 
 class PsiColumnSpec(BaseModel):
@@ -46,6 +52,21 @@ class RbiPsiConfig(BaseModel):
 class NpciUpiConfig(BaseModel):
     file_pattern: str
 
+class NpciP2mConfig(BaseModel):
+    file_pattern: str
+
+class RbiBankwiseConfig(BaseModel):
+    file_pattern: str
+
+class RbiRepoConfig(BaseModel):
+    file_pattern: str
+
+class MospiCpiConfig(BaseModel):
+    file_pattern: str
+
+class PmjdyConfig(BaseModel):
+    file_pattern: str
+
 
 class ValidationConfig(BaseModel):
     max_null_pct: float = 20.0
@@ -64,6 +85,11 @@ class Settings(BaseModel):
     paths: PathsConfig
     rbi_psi: RbiPsiConfig
     npci_upi: NpciUpiConfig
+    npci_p2m: NpciP2mConfig
+    rbi_bankwise: RbiBankwiseConfig
+    rbi_repo: RbiRepoConfig
+    mospi_cpi: MospiCpiConfig
+    pmjdy: PmjdyConfig
     validation: ValidationConfig
     issuers: dict[str, list[str]] = Field(default_factory=dict)
     structural_events: list[StructuralEvent] = Field(default_factory=list)
@@ -72,8 +98,8 @@ class Settings(BaseModel):
 def load_settings(config_path: Path | None = None) -> Settings:
     """Load and validate config/settings.toml.
 
-    Resolves relative paths to project-root absolute paths and ensures the
-    data directories exist on disk.
+    Resolves relative paths to project-root absolute paths and ensures all
+    data directories exist on disk (raw sub-dirs + processed).
     """
     if config_path is None:
         config_path = PROJECT_ROOT / "config" / "settings.toml"
@@ -86,12 +112,22 @@ def load_settings(config_path: Path | None = None) -> Settings:
 
     settings = Settings(**raw)
 
-    if not settings.paths.raw_dir.is_absolute():
-        settings.paths.raw_dir = PROJECT_ROOT / settings.paths.raw_dir
-    if not settings.paths.processed_dir.is_absolute():
-        settings.paths.processed_dir = PROJECT_ROOT / settings.paths.processed_dir
-
-    settings.paths.raw_dir.mkdir(parents=True, exist_ok=True)
-    settings.paths.processed_dir.mkdir(parents=True, exist_ok=True)
+    # Resolve every path field relative to project root and mkdir
+    path_fields = [
+        "processed_dir",
+        "rbi_psi_dir",
+        "rbi_bankwise_dir",
+        "rbi_repo_dir",
+        "npci_upi_dir",
+        "npci_p2m_dir",
+        "mospi_cpi_dir",
+        "pmjdy_dir",
+    ]
+    for field in path_fields:
+        p = getattr(settings.paths, field)
+        if not p.is_absolute():
+            p = PROJECT_ROOT / p
+            setattr(settings.paths, field, p)
+        p.mkdir(parents=True, exist_ok=True)
 
     return settings
