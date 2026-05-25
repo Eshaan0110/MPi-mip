@@ -101,20 +101,20 @@ def run_p2p_upi_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     if settings is None:
         settings = load_settings()
 
-    p2p_dir = settings.paths.raw_dir / "P2P_P2M_UPI"
+    p2p_dir = settings.paths.npci_p2m_dir
     processed_dir = settings.paths.processed_dir
 
     if not p2p_dir.exists():
         raise FileNotFoundError(
-            f"P2P_P2M_UPI directory not found at {p2p_dir}.\n"
-            "Create data/raw/P2P_P2M_UPI/ and place the monthly NPCI P2P/P2M files there.\n"
+            f"P2M directory not found at {p2p_dir}.\n"
+            "Create data/raw/npci_p2m/ and place the monthly NPCI P2P/P2M files there.\n"
             "Source: https://www.npci.org.in/what-we-do/upi/upi-ecosystem-statistics"
         )
 
-    files = sorted(p2p_dir.glob("Ecosystem-Statistics-UPI-P2p-and-p2m-transactions-*.xlsx"))
+    files = sorted(p2p_dir.glob(settings.npci_p2m.file_pattern))
     if not files:
         raise FileNotFoundError(
-            f"No P2P/P2M files matching the expected pattern in {p2p_dir}."
+            f"No P2M files matching the expected pattern in {p2p_dir}."
         )
 
     logger.info(f"Found {len(files)} P2P/P2M monthly files")
