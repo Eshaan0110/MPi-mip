@@ -116,14 +116,14 @@ def run_cpi_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     if settings is None:
         settings = load_settings()
 
-    raw_dir = settings.paths.raw_dir
+    raw_dir = settings.paths.mospi_cpi_dir
     processed_dir = settings.paths.processed_dir
 
-    candidates = sorted(raw_dir.glob("CPI*.xlsx"))
+    candidates = sorted(raw_dir.glob(settings.mospi_cpi.file_pattern))
     if not candidates:
         raise FileNotFoundError(
-            f"No CPI file matching 'CPI*.xlsx' in {raw_dir}.\n"
-            "Copy CPI.xlsx into data/raw/ and retry.\n"
+            f"No CPI file matching '{settings.mospi_cpi.file_pattern}' in {raw_dir}.\n"
+            "Copy CPI.xlsx into data/raw/mospi_cpi/ and retry.\n"
             "Source: https://cpi.mospi.gov.in → Time Series Data"
         )
     filepath = candidates[-1]
