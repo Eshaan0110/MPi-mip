@@ -121,15 +121,15 @@ def run_rbi_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     if settings is None:
         settings = load_settings()
 
-    raw_dir = settings.paths.raw_dir
+    raw_dir = settings.paths.rbi_psi_dir
     processed_dir = settings.paths.processed_dir
 
     files = sorted(raw_dir.glob(settings.rbi_psi.file_pattern))
     if not files:
         raise FileNotFoundError(
             f"No PSI files matching '{settings.rbi_psi.file_pattern}' in {raw_dir}\n"
-            f"Download from: RBI DBIE -> Statistics -> Financial Sector -> "
-            f"Payment Systems (both old- and new-format exports)."
+            f"Download from RBI DBIE → Statistics → Financial Sector → Payment Systems\n"
+            f"and save to data/raw/rbi_psi/."
         )
 
     logger.info(f"Found {len(files)} PSI file(s): {[f.name for f in files]}")
