@@ -123,16 +123,17 @@ def run_repo_rate_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     if settings is None:
         settings = load_settings()
 
-    raw_dir = settings.paths.raw_dir
+    raw_dir = settings.paths.rbi_repo_dir
     processed_dir = settings.paths.processed_dir
 
     candidates = sorted(
-        list(raw_dir.glob("RepoRate*.xlsx")) + list(raw_dir.glob("RepoRate*.XLSX"))
+        list(raw_dir.glob(settings.rbi_repo.file_pattern)) +
+        list(raw_dir.glob(settings.rbi_repo.file_pattern.replace(".xlsx", ".XLSX")))
     )
     if not candidates:
         raise FileNotFoundError(
-            f"No repo rate file matching 'RepoRate*.xlsx' in {raw_dir}.\n"
-            "Copy RepoRate2007.XLSX into data/raw/ and retry.\n"
+            f"No repo rate file matching '{settings.rbi_repo.file_pattern}' in {raw_dir}.\n"
+            "Copy RepoRate2007.XLSX into data/raw/rbi_repo_rate/ and retry.\n"
             "Source: RBI Handbook of Statistics → Table 43 (Policy Rates)"
         )
     filepath = candidates[-1]
