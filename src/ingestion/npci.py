@@ -65,15 +65,15 @@ def run_npci_ingestion(settings: Settings | None = None) -> pd.DataFrame:
         settings = load_settings()
 
     cfg = settings.npci_upi
-    raw_dir = settings.paths.raw_dir
+    raw_dir = settings.paths.npci_upi_dir
     processed_dir = settings.paths.processed_dir
 
     files = sorted(raw_dir.glob(cfg.file_pattern))
     if not files:
         raise FileNotFoundError(
             f"No NPCI UPI files matching '{cfg.file_pattern}' in {raw_dir}\n"
-            f"Download from: "
-            f"https://www.npci.org.in/what-we-do/upi/upi-ecosystem-statistics"
+            f"Download yearly files from npci.org.in → UPI Ecosystem Statistics\n"
+            f"and save to data/raw/npci_upi/."
         )
 
     logger.info(f"Found {len(files)} NPCI yearly files")
