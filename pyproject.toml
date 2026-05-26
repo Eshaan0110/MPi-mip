@@ -8,9 +8,13 @@ dependencies = [
     "openpyxl>=3.1",
     "pandas>=2.2",
     "playwright>=1.48",
+    "plotly>=5.24",
+    "prophet>=1.1",
     "pyarrow>=17.0",
     "pydantic>=2.9",
-    "xlrd>=2.0.2",
+    "ruptures>=1.1",
+    "scikit-learn>=1.5",
+    "xlrd>=2.0",
 ]
 
 # Forecasting and dashboard dependencies will be added when Tasks 2 / 5 begin:
