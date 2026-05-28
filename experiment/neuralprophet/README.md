@@ -1,6 +1,9 @@
 # experiments/neuralprophet/
 
-**Status:** Active experiment — do not merge to main pipeline until CV results reviewed.
+## Status
+NeuralProphet is not installable on Python 3.12 due to torch/pytorch-lightning
+dependency conflicts. Experiment deferred. Revisit if Python 3.10 environment
+becomes available, or when NeuralProphet publishes a Python 3.12 compatible release.
 
 ---
 
