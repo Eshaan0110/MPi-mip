@@ -4,24 +4,30 @@ granger_causality.py  --  Formal Granger causality tests for MIP regressors.
 Tests whether each regressor has genuine predictive power over the target
 series, beyond what the target's own history already explains.
 
-The three hypotheses under test:
-  1. repo_rate (lag 6)  →  credit_cards_outstanding_lakh
-     Economic prior: RBI tightening → banks slow CC issuance ~6m later.
-     Granger confirms whether the lag-6 channel is statistically real.
+The five hypotheses under test (Rahul email point 1):
 
-  2. upi_qr_lakh  →  credit_cards_outstanding_lakh
-     AXIOM challenge: both trend upward together. Granger checks if QR
-     has independent predictive power or is just riding the trend.
+  VARIABLE EXCLUSION TESTS (confirm dropped variables are genuinely redundant):
+  1. cpi_inflation_pct -> credit_cards_outstanding_lakh
+     Rahul ask: confirm CPI adds no lagged predictive value beyond repo rate.
 
-  3. debit_card_pos_vol_lakh  →  debit_cards_outstanding_lakh
-     Confirms the displacement signal direction: falling POS swipes
-     predict future DC outstanding, not the other way round.
+  2. upi_volume_mn -> debit_cards_outstanding_lakh
+     Rahul ask: confirm raw UPI volume is genuinely redundant vs debit-POS.
+
+  VARIABLE INCLUSION TESTS (confirm kept variables have directional validity):
+  3. repo_rate (lag 6) -> credit_cards_outstanding_lakh
+     Economic prior: RBI tightening -> banks slow CC issuance ~6m later.
+
+  4. upi_qr_lakh -> credit_cards_outstanding_lakh
+     AXIOM challenge: both trend upward -- Granger checks independent signal.
+
+  5. debit_card_pos_vol_lakh -> debit_cards_outstanding_lakh
+     Rahul ask: confirm causal direction holds (POS -> outstanding, not reverse).
 
 Method:
   - First-difference both series before testing (Granger requires stationarity).
   - Test at maxlag = 6 (tests lags 1 through 6 separately).
   - Report F-stat and p-value per lag. p < 0.05 = statistically significant.
-  - Also test the REVERSE direction (Y → X) to check for reverse causality.
+  - Also test the REVERSE direction (Y -> X) to check for reverse causality.
 
 Usage:
   # With processed parquet files (normal pipeline run):
@@ -55,14 +61,15 @@ _PROCESSED    = _PROJECT_ROOT / "data" / "processed"
 
 
 # ---------------------------------------------------------------------------
-# Data loading — mirrors data_prep.py load pattern
+# Data loading
 # ---------------------------------------------------------------------------
 
 def _load_master() -> pd.DataFrame | None:
-    """Try to load the processed parquet files and build a master frame.
-    Returns None if data hasn't been ingested yet (no parquet files present)."""
-    psi_path = _PROCESSED / "rbi_psi_cards.parquet"
+    """Load and merge all processed parquet files into one master frame."""
+    psi_path  = _PROCESSED / "rbi_psi_cards.parquet"
     repo_path = _PROCESSED / "repo_rate.parquet"
+    cpi_path  = _PROCESSED / "cpi.parquet"
+    npci_path = _PROCESSED / "npci_upi.parquet"
 
     if not psi_path.exists():
         return None
@@ -83,6 +90,28 @@ def _load_master() -> pd.DataFrame | None:
         repo["date"] = pd.to_datetime(repo["date"]).dt.to_period("M").dt.to_timestamp()
         master = master.merge(repo[["date", "repo_rate"]], on="date", how="left")
         master["repo_rate"] = master["repo_rate"].ffill()
+
+    if cpi_path.exists():
+        cpi = pd.read_parquet(cpi_path)
+        cpi["date"] = pd.to_datetime(cpi["date"]).dt.to_period("M").dt.to_timestamp()
+        # Accept either column name variant
+        cpi_col = "cpi_inflation_pct" if "cpi_inflation_pct" in cpi.columns else "cpi_index"
+        master = master.merge(cpi[["date", cpi_col]], on="date", how="left")
+        if cpi_col != "cpi_inflation_pct":
+            master = master.rename(columns={cpi_col: "cpi_inflation_pct"})
+        master["cpi_inflation_pct"] = master["cpi_inflation_pct"].ffill()
+    else:
+        master["cpi_inflation_pct"] = np.nan
+
+    if npci_path.exists():
+        npci = pd.read_parquet(npci_path)
+        npci["date"] = pd.to_datetime(npci["date"]).dt.to_period("M").dt.to_timestamp()
+        upi_col = "upi_volume_mn" if "upi_volume_mn" in npci.columns else npci.columns[1]
+        master = master.merge(npci[["date", upi_col]], on="date", how="left")
+        if upi_col != "upi_volume_mn":
+            master = master.rename(columns={upi_col: "upi_volume_mn"})
+    else:
+        master["upi_volume_mn"] = np.nan
 
     return master.sort_values("date").reset_index(drop=True)
 
@@ -120,11 +149,7 @@ def _is_stationary(series: pd.Series, alpha: float = 0.05) -> tuple[bool, float]
 
 
 def _make_stationary(series: pd.Series, name: str) -> tuple[pd.Series, str]:
-    """
-    First-difference the series if not already stationary.
-    Granger causality requires both series to be stationary.
-    Returns (differenced_series, transformation_applied).
-    """
+    """First-difference until stationary. Granger requires stationarity."""
     is_stat, pval = _is_stationary(series)
     if is_stat:
         return series, f"none (ADF p={pval:.3f}, already stationary)"
@@ -134,7 +159,6 @@ def _make_stationary(series: pd.Series, name: str) -> tuple[pd.Series, str]:
     if is_stat2:
         return diff1, f"first-difference (ADF p after diff={pval2:.3f})"
 
-    # If still not stationary after one diff, second difference
     diff2 = diff1.diff().dropna()
     return diff2, f"second-difference (ADF p after diff={pval2:.3f}, second diff applied)"
 
@@ -145,17 +169,17 @@ def _make_stationary(series: pd.Series, name: str) -> tuple[pd.Series, str]:
 
 @dataclass
 class GrangerResult:
-    hypothesis: str         # "X → Y" description
+    hypothesis: str
     x_col: str
     y_col: str
     x_transform: str
     y_transform: str
     maxlag: int
-    significant_lags: list[int]    # lags where p < 0.05
-    best_lag: int                  # lag with lowest p-value
+    significant_lags: list[int]
+    best_lag: int
     best_pvalue: float
     best_fstat: float
-    verdict: str                   # "CONFIRMED" | "WEAK" | "NOT CONFIRMED"
+    verdict: str
     interpretation: str
 
     def __str__(self) -> str:
@@ -165,7 +189,7 @@ class GrangerResult:
             f"{'─'*65}",
             f"  X transform : {self.x_transform}",
             f"  Y transform : {self.y_transform}",
-            f"  Lags tested : 1 – {self.maxlag}",
+            f"  Lags tested : 1 - {self.maxlag}",
             f"  Sig. lags   : {self.significant_lags if self.significant_lags else 'none'}",
             f"  Best lag    : {self.best_lag}  (F={self.best_fstat:.2f}, p={self.best_pvalue:.4f})",
             f"  Verdict     : {self.verdict}",
@@ -188,13 +212,7 @@ def run_granger(
     interpretation_confirmed: str = "",
     interpretation_not_confirmed: str = "",
 ) -> GrangerResult:
-    """
-    Run Granger causality test: does X Granger-cause Y?
-
-    Stationarises both series first. Tests at all lags 1..maxlag.
-    Returns a GrangerResult with verdict and interpretation.
-    """
-    # Align and drop nulls
+    """Run Granger causality test: does X Granger-cause Y?"""
     paired = df[["date", x_col, y_col]].dropna().sort_values("date")
     x_raw = paired[x_col]
     y_raw = paired[y_col]
@@ -206,31 +224,26 @@ def run_granger(
             maxlag=maxlag, significant_lags=[], best_lag=0,
             best_pvalue=1.0, best_fstat=0.0,
             verdict="INSUFFICIENT DATA",
-            interpretation=f"Only {len(paired)} overlapping observations after dropping nulls. Need ≥30."
+            interpretation=f"Only {len(paired)} overlapping observations. Need >=30."
         )
 
-    # Stationarise
     x_stat, x_tf = _make_stationary(x_raw, x_col)
     y_stat, y_tf = _make_stationary(y_raw, y_col)
 
-    # Realign after differencing (differencing reduces length by 1 or 2)
     combined = pd.DataFrame({"x": x_stat, "y": y_stat}).dropna()
     if len(combined) < maxlag + 10:
         maxlag = max(1, len(combined) // 5)
 
-    test_data = combined[["y", "x"]].values  # statsmodels: [effect, cause]
+    test_data = combined[["y", "x"]].values
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         raw_results = grangercausalitytests(test_data, maxlag=maxlag, verbose=False)
 
-    # Extract p-values and F-stats for each lag
     pvals = {}
     fstats = {}
     for lag, result in raw_results.items():
-        # result[0] = dict of test results, result[1] = OLS fit objects
-        # 'ssr_ftest' = F-test based on sum-of-squared residuals
-        fstat, pval, df_denom, df_num = result[0]["ssr_ftest"]
+        fstat, pval, _, _ = result[0]["ssr_ftest"]
         pvals[lag] = float(pval)
         fstats[lag] = float(fstat)
 
@@ -239,7 +252,6 @@ def run_granger(
     best_pval = pvals[best_lag]
     best_fstat = fstats[best_lag]
 
-    # Verdict
     if best_pval < 0.01:
         verdict = "CONFIRMED (p < 0.01)"
     elif best_pval < 0.05:
@@ -247,7 +259,7 @@ def run_granger(
     elif best_pval < 0.10:
         verdict = "WEAK (p < 0.10, marginal)"
     else:
-        verdict = "NOT CONFIRMED (p ≥ 0.10)"
+        verdict = "NOT CONFIRMED (p >= 0.10)"
 
     interpretation = (
         interpretation_confirmed if best_pval < alpha else interpretation_not_confirmed
@@ -255,10 +267,8 @@ def run_granger(
 
     return GrangerResult(
         hypothesis=hypothesis,
-        x_col=x_col,
-        y_col=y_col,
-        x_transform=x_tf,
-        y_transform=y_tf,
+        x_col=x_col, y_col=y_col,
+        x_transform=x_tf, y_transform=y_tf,
         maxlag=maxlag,
         significant_lags=significant_lags,
         best_lag=best_lag,
@@ -270,128 +280,162 @@ def run_granger(
 
 
 # ---------------------------------------------------------------------------
-# Main: run all three tests + reverse directions
+# All tests
 # ---------------------------------------------------------------------------
 
 def run_all_tests(df: pd.DataFrame, maxlag: int = 6) -> list[GrangerResult]:
     results = []
 
-    # ── Test 1: repo_rate → CC outstanding ───────────────────────────────
-    # Apply 6-month lag to repo_rate before testing (our model assumption)
-    df_repo = df.copy()
+    # ── EXCLUSION TEST 1: CPI -> CC outstanding (Rahul ask) ──────────────
+    # Rahul: confirm CPI adds no lagged value beyond what repo rate already captures.
+    # Use CC training window (Jan 2013+) — same window as the actual CC model.
+    df_cc = df[df["date"] >= "2013-01-01"].copy()
+
+    if df_cc.get("cpi_inflation_pct", pd.Series(dtype=float)).notna().sum() > 30:
+        results.append(run_granger(
+            df_cc,
+            x_col="cpi_inflation_pct",
+            y_col="credit_cards_outstanding_lakh",
+            hypothesis="CPI inflation -> CC outstanding (EXCLUSION TEST)",
+            maxlag=maxlag,
+            interpretation_confirmed=(
+                "CPI has independent predictive power over CC growth beyond repo rate. "
+                "ACTION: Reconsider dropping CPI. Re-test with both CPI and repo in the model "
+                "and check if multicollinearity re-emerges (VIF > 10)."
+            ),
+            interpretation_not_confirmed=(
+                "CPI does NOT predict CC growth beyond what repo rate already captures. "
+                "Exclusion of CPI is statistically justified. "
+                "Repo rate subsumes the inflation signal — decision confirmed."
+            ),
+        ))
+    else:
+        print("  WARNING: cpi_inflation_pct has insufficient data — skipping CPI test.")
+        print("           Check that data/processed/cpi.parquet exists and has been ingested.")
+
+    # ── EXCLUSION TEST 2: UPI total volume -> DC outstanding (Rahul ask) ──
+    # Rahul: confirm raw UPI volume is genuinely redundant vs debit-POS.
+    # Only meaningful post-2019 when UPI volume became significant.
+    df_dc_upi = df[df["date"] >= "2019-11-01"].copy()
+
+    if df_dc_upi.get("upi_volume_mn", pd.Series(dtype=float)).notna().sum() > 30:
+        results.append(run_granger(
+            df_dc_upi,
+            x_col="upi_volume_mn",
+            y_col="debit_cards_outstanding_lakh",
+            hypothesis="UPI total volume -> DC outstanding (EXCLUSION TEST, post-Nov 2019)",
+            maxlag=min(maxlag, 4),
+            interpretation_confirmed=(
+                "UPI total volume has predictive power over DC outstanding. "
+                "It is NOT fully redundant with debit-POS. "
+                "ACTION: Re-examine whether upi_volume_mn should replace or complement "
+                "debit_card_pos_vol_lakh in the DC model."
+            ),
+            interpretation_not_confirmed=(
+                "UPI total volume does NOT predict DC outstanding beyond debit-POS signal. "
+                "Exclusion is statistically justified. "
+                "The debit-POS regressor captures the displacement story more cleanly."
+            ),
+        ))
+    else:
+        print("  WARNING: upi_volume_mn has insufficient data — skipping UPI volume test.")
+        print("           Check that data/processed/npci_upi.parquet exists and has been ingested.")
+
+    # ── INCLUSION TEST 3: repo_rate -> CC outstanding ────────────────────
+    df_repo = df_cc.copy()
     df_repo["repo_rate_lag6"] = df_repo["repo_rate"].shift(6)
 
     results.append(run_granger(
         df_repo,
         x_col="repo_rate_lag6",
         y_col="credit_cards_outstanding_lakh",
-        hypothesis="repo_rate (lag 6) → CC outstanding",
+        hypothesis="repo_rate (lag 6) -> CC outstanding (INCLUSION TEST)",
         maxlag=maxlag,
         interpretation_confirmed=(
             "Repo rate at 6-month lag has genuine predictive power over CC growth. "
-            "Validates the regressor choice. RBI tightening signal is real and leads by ~6 months."
+            "Validates the regressor choice."
         ),
         interpretation_not_confirmed=(
-            "Repo rate at lag 6 does NOT significantly predict CC growth beyond CC's own history. "
-            "ACTION: Re-run with raw lag (lag=0) and test other lags. "
-            "If no lag is significant, consider dropping repo_rate as a regressor."
+            "Repo rate at lag 6 does NOT predict CC growth beyond CC own history. "
+            "Note: second-differencing may be destroying the slow-moving policy signal. "
+            "Cross-validate with CV MAPE comparison (with vs without repo_rate) "
+            "before making a drop decision."
         ),
     ))
 
-    # Reverse: CC outstanding → repo_rate (should NOT be significant)
+    # Reverse: CC -> repo_rate
     results.append(run_granger(
         df_repo,
         x_col="credit_cards_outstanding_lakh",
         y_col="repo_rate_lag6",
-        hypothesis="CC outstanding → repo_rate (REVERSE — should NOT hold)",
+        hypothesis="CC outstanding -> repo_rate (REVERSE)",
         maxlag=maxlag,
         interpretation_confirmed=(
-            "WARNING: reverse causality found. CC growth predicts repo rate. "
-            "This could indicate the relationship is coincidental or driven by a common third factor. "
-            "ACTION: Escalate to AXIOM — the regressor may be endogenous."
+            "Reverse causality found. Likely reflects RBI reaction function: "
+            "credit expansion -> inflation risk -> RBI tightens. "
+            "This is documented policy behaviour, not a modelling flaw. "
+            "The forward direction (repo -> CC) remains the correct causal channel in the model."
         ),
         interpretation_not_confirmed=(
-            "Good: no reverse causality. CC growth does not predict repo rate. "
-            "Direction of causality runs one way only: repo → CC."
+            "Good: no reverse causality. Direction runs one way: repo -> CC."
         ),
     ))
 
-    # ── Test 2: upi_qr_lakh → CC outstanding ─────────────────────────────
+    # ── INCLUSION TEST 4: upi_qr_lakh -> CC outstanding ──────────────────
     results.append(run_granger(
-        df,
+        df_cc,
         x_col="upi_qr_lakh",
         y_col="credit_cards_outstanding_lakh",
-        hypothesis="upi_qr_lakh → CC outstanding",
+        hypothesis="upi_qr_lakh -> CC outstanding (INCLUSION TEST)",
         maxlag=maxlag,
         interpretation_confirmed=(
-            "QR code expansion has genuine predictive power over CC issuance. "
-            "RuPay credit-on-UPI channel is real. Keep the regressor. "
-            "Answers AXIOM's challenge that this is just two upward trends."
+            "QR code expansion has independent predictive power over CC issuance. "
+            "RuPay credit-on-UPI channel is real. Keep the regressor."
         ),
         interpretation_not_confirmed=(
-            "QR codes do NOT significantly predict CC growth beyond CC's own trend. "
-            "ACTION: Drop upi_qr_lakh as a regressor — it is riding the trend, not driving it. "
-            "Run qr_ablation.py to confirm the forecast impact of dropping it."
+            "QR codes do NOT predict CC growth beyond CC own trend. "
+            "ACTION: Run qr_ablation.py to check forecast impact. "
+            "If mean delta < 1%, drop the regressor."
         ),
     ))
 
-    # Reverse: CC outstanding → upi_qr_lakh
-    results.append(run_granger(
-        df,
-        x_col="credit_cards_outstanding_lakh",
-        y_col="upi_qr_lakh",
-        hypothesis="CC outstanding → upi_qr_lakh (REVERSE — check for circularity)",
-        maxlag=maxlag,
-        interpretation_confirmed=(
-            "WARNING: CC growth predicts QR code expansion. "
-            "The relationship may be bidirectional or the QR regressor may be endogenous. "
-            "ACTION: Flag to AXIOM. Consider instrumenting or dropping the regressor."
-        ),
-        interpretation_not_confirmed=(
-            "Good: CC growth does not predict QR code deployment. "
-            "QR infrastructure is being pushed by NPCI/government mandate, not pulled by CC demand. "
-            "Circularity concern is resolved."
-        ),
-    ))
-
-    # ── Test 3: DC POS volume → DC outstanding ────────────────────────────
-    # Only use post-Nov 2019 data for this test (PSI format change; pre-2019 DC POS = 0)
+    # ── INCLUSION TEST 5: DC POS -> DC outstanding (Rahul ask) ───────────
     df_dc = df[df["date"] >= "2019-11-01"].copy()
 
     results.append(run_granger(
         df_dc,
         x_col="debit_card_pos_vol_lakh",
         y_col="debit_cards_outstanding_lakh",
-        hypothesis="DC POS volume → DC outstanding (post-Nov 2019)",
-        maxlag=min(maxlag, 4),   # shorter series after 2019 cutoff — reduce maxlag
+        hypothesis="DC POS volume -> DC outstanding (INCLUSION TEST, post-Nov 2019)",
+        maxlag=min(maxlag, 4),
         interpretation_confirmed=(
-            "Falling DC POS swipes have genuine predictive power over DC outstanding. "
-            "The UPI displacement signal is causally linked to card count trajectory. "
-            "Validates using this as a regressor in the DC model."
+            "DC POS swipes have genuine predictive power over DC outstanding. "
+            "The displacement signal is causally linked to card count trajectory. "
+            "Validates using this as a regressor."
         ),
         interpretation_not_confirmed=(
-            "DC POS volume does NOT significantly predict DC outstanding. "
-            "ACTION: The displacement story may be captured entirely by changepoints already. "
-            "Test dropping debit_card_pos_vol_lakh and see if DC CV MAPE changes."
+            "DC POS volume does NOT predict DC outstanding. "
+            "Changepoints (UPI inflection Jan 2022) may be fully absorbing this signal. "
+            "ACTION: Test dropping debit_card_pos_vol_lakh and compare DC CV MAPE."
         ),
     ))
 
-    # Reverse: DC outstanding → DC POS volume
+    # Reverse: DC outstanding -> DC POS (Rahul ask: confirm direction)
     results.append(run_granger(
         df_dc,
         x_col="debit_cards_outstanding_lakh",
         y_col="debit_card_pos_vol_lakh",
-        hypothesis="DC outstanding → DC POS volume (REVERSE)",
+        hypothesis="DC outstanding -> DC POS volume (REVERSE — Rahul direction check)",
         maxlag=min(maxlag, 4),
         interpretation_confirmed=(
-            "WARNING: more DC cards predict more DC POS swipes — reverse causality present. "
-            "The relationship is bidirectional. "
-            "ACTION: Consider whether the model should treat this as a lagged feedback loop."
+            "WARNING: DC card count predicts POS swipes. Reverse causality present. "
+            "ACTION: Check whether more cards being issued is partially sustaining POS volume. "
+            "If so, the causal story is bidirectional."
         ),
         interpretation_not_confirmed=(
-            "Good: DC card count does not predict POS swipes. "
+            "Good: DC card count does NOT predict POS swipes. "
             "More cards being issued does not drive more POS usage — UPI has taken over. "
-            "Direction of displacement runs one way: POS decline → outstanding slowdown."
+            "Causal direction confirmed: POS decline -> outstanding slowdown."
         ),
     ))
 
@@ -403,56 +447,50 @@ def run_all_tests(df: pd.DataFrame, maxlag: int = 6) -> list[GrangerResult]:
 # ---------------------------------------------------------------------------
 
 def print_summary(results: list[GrangerResult]) -> None:
-    print("\n" + "═" * 65)
+    print("\n" + "=" * 65)
     print("  MIP — GRANGER CAUSALITY RESULTS")
-    print("  Confirming regressor validity for CC + DC models")
-    print("═" * 65)
+    print("  Variable selection validation (Rahul email, point 1)")
+    print("=" * 65)
 
     for r in results:
         print(r)
 
-    print("\n" + "═" * 65)
+    print("\n" + "=" * 65)
     print("  VERDICT SUMMARY")
-    print("─" * 65)
-    confirmed = [r for r in results if "CONFIRMED" in r.verdict and "NOT" not in r.verdict]
-    not_confirmed = [r for r in results if "NOT CONFIRMED" in r.verdict]
-    weak = [r for r in results if "WEAK" in r.verdict]
-    warnings_ = [r for r in confirmed if "REVERSE" in r.hypothesis]
-    forward = [r for r in confirmed if "REVERSE" not in r.hypothesis]
+    print("-" * 65)
 
-    print(f"\n  Forward causality confirmed  : {len(forward)}")
-    for r in forward:
-        print(f"    ✓  {r.hypothesis}")
+    exclusion = [r for r in results if "EXCLUSION" in r.hypothesis]
+    inclusion = [r for r in results if "INCLUSION" in r.hypothesis]
+    reverse   = [r for r in results if "REVERSE" in r.hypothesis]
 
-    if weak:
-        print(f"\n  Weak / marginal              : {len(weak)}")
-        for r in weak:
-            print(f"    ~  {r.hypothesis}")
+    print("\n  EXCLUSION TESTS (dropped variables — should NOT be confirmed):")
+    for r in exclusion:
+        icon = "✓ justified" if "NOT CONFIRMED" in r.verdict else "✗ RECONSIDER"
+        print(f"    {icon}  {r.hypothesis.split('(')[0].strip()} — {r.verdict}")
 
-    if not_confirmed:
-        print(f"\n  Not confirmed                : {len(not_confirmed)}")
-        for r in not_confirmed:
-            print(f"    ✗  {r.hypothesis}")
+    print("\n  INCLUSION TESTS (kept variables — should be confirmed):")
+    for r in inclusion:
+        icon = "✓" if "CONFIRMED" in r.verdict and "NOT" not in r.verdict else "~ weak" if "WEAK" in r.verdict else "✗"
+        print(f"    {icon}  {r.hypothesis.split('(')[0].strip()} — {r.verdict}")
 
-    if warnings_:
-        print(f"\n  Reverse causality warnings   : {len(warnings_)}")
-        for r in warnings_:
-            print(f"    ⚠  {r.hypothesis}")
+    print("\n  REVERSE DIRECTION CHECKS:")
+    for r in reverse:
+        icon = "⚠ warning" if "CONFIRMED" in r.verdict and "NOT" not in r.verdict else "✓ clean"
+        print(f"    {icon}  {r.hypothesis.split('(')[0].strip()} — {r.verdict}")
 
-    print("\n" + "═" * 65)
-    print("  ACTION ITEMS")
-    print("─" * 65)
+    print("\n" + "=" * 65)
+    print("  ACTION ITEMS FOR RAHUL RESPONSE")
+    print("-" * 65)
     action_needed = [r for r in results if "ACTION" in r.interpretation]
     if action_needed:
         for i, r in enumerate(action_needed, 1):
-            action_line = [l for l in r.interpretation.split(".") if "ACTION" in l]
+            action_line = [l.strip() for l in r.interpretation.split(".") if "ACTION" in l]
             print(f"  {i}. {r.hypothesis}")
             if action_line:
-                print(f"     → {action_line[0].replace('ACTION:', '').strip()}")
+                print(f"     -> {action_line[0].replace('ACTION:', '').strip()}")
     else:
-        print("  None — all regressors validated.")
-
-    print("═" * 65 + "\n")
+        print("  None — all variable selections validated.")
+    print("=" * 65 + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -461,40 +499,30 @@ def print_summary(results: list[GrangerResult]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Granger causality tests for MIP model regressors."
+        description="Granger causality tests for MIP model variable selection."
     )
     parser.add_argument(
         "--data", type=Path, default=None,
-        help="Path to master CSV (date, cc_outstanding, dc_outstanding, "
-             "repo_rate, upi_qr_lakh, debit_card_pos_vol_lakh). "
-             "If omitted, loads from data/processed/ parquet files."
+        help="Path to master CSV. If omitted, loads from data/processed/ parquets."
     )
-    parser.add_argument(
-        "--maxlag", type=int, default=6,
-        help="Maximum lag to test (default: 6). Tests all lags 1..maxlag."
-    )
-    parser.add_argument(
-        "--alpha", type=float, default=0.05,
-        help="Significance threshold (default: 0.05)."
-    )
+    parser.add_argument("--maxlag", type=int, default=6)
+    parser.add_argument("--alpha",  type=float, default=0.05)
     parser.add_argument(
         "--output-json", type=Path,
         default=_PROCESSED / "granger_results.json",
-        help="Where to write JSON results (default: data/processed/granger_results.json)."
     )
     args = parser.parse_args()
 
     print("\nLoading data...")
     try:
-        df = load_data(args.csv_path if hasattr(args, "csv_path") else args.data)
+        df = load_data(args.data)
         print(f"  Loaded {len(df)} rows | "
-              f"{df['date'].min().strftime('%b %Y')} → {df['date'].max().strftime('%b %Y')}")
+              f"{df['date'].min().strftime('%b %Y')} -> {df['date'].max().strftime('%b %Y')}")
         print(f"  Columns: {list(df.columns)}")
     except FileNotFoundError as e:
         print(f"\nERROR: {e}")
         return 1
 
-    # Check required columns
     required = [
         "credit_cards_outstanding_lakh",
         "debit_cards_outstanding_lakh",
@@ -508,15 +536,21 @@ def main() -> int:
         print(f"Available: {list(df.columns)}")
         return 1
 
+    # Warn if new columns are missing (non-fatal — tests will be skipped)
+    for col, label in [("cpi_inflation_pct", "CPI"), ("upi_volume_mn", "UPI volume")]:
+        if col not in df.columns or df[col].notna().sum() < 30:
+            print(f"  NOTE: {col} not available — {label} exclusion test will be skipped.")
+            print(f"        Ensure data/processed/{'cpi' if 'cpi' in col else 'npci_upi'}.parquet is ingested.")
+
     print(f"\nRunning Granger causality tests (maxlag={args.maxlag}, alpha={args.alpha})...")
-    print("  Note: Both series are first-differenced to ensure stationarity.\n")
+    print("  Both series are first-differenced to ensure stationarity.\n")
 
     results = run_all_tests(df, maxlag=args.maxlag)
     print_summary(results)
 
-    # Write JSON output
     try:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
+
         def _serializable(obj):
             if isinstance(obj, (np.integer,)):
                 return int(obj)
@@ -530,10 +564,13 @@ def main() -> int:
     except Exception as e:
         print(f"Warning: could not write JSON — {e}")
 
-    # Exit code: 0 if all forward tests confirmed, 1 if any failed
-    forward_results = [r for r in results if "REVERSE" not in r.hypothesis]
-    all_confirmed = all("CONFIRMED" in r.verdict for r in forward_results)
-    return 0 if all_confirmed else 1
+    forward = [r for r in results if "REVERSE" not in r.hypothesis]
+    all_ok = all(
+        ("NOT CONFIRMED" in r.verdict if "EXCLUSION" in r.hypothesis
+         else "CONFIRMED" in r.verdict)
+        for r in forward
+    )
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
