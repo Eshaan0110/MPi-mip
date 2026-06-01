@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MPi MIP — India Cards Outstanding Forecast</title>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3e;
+    --text: #e2e8f0;
+    --text-muted: #8892a4;
+    --accent-cc: #3b82f6;
+    --accent-dc: #10b981;
+    --accent-fc: #f59e0b;
+    --event: #6366f1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-size: 14px; }
+
+  header {
+    padding: 20px 32px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: 16px;
+  }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  header .sub { font-size: 12px; color: var(--text-muted); }
+
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  }
+  .badge-live { background: #14532d; color: #4ade80; }
+  .badge-warn { background: #451a03; color: #fbbf24; }
+
+  .kpi-bar {
+    display: flex; gap: 1px; background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .kpi {
+    flex: 1; background: var(--surface); padding: 14px 24px;
+  }
+  .kpi .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
+  .kpi .value { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .kpi .delta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .kpi .delta.up { color: #4ade80; }
+  .kpi .delta.down { color: #f87171; }
+
+  .charts { padding: 24px 32px; display: flex; flex-direction: column; gap: 32px; }
+  .chart-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden;
+  }
+  .chart-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .chart-header h2 { font-size: 14px; font-weight: 600; }
+  .chart-header .meta { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+  .chart-body { height: 380px; }
+
+  .flags {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px;
+  }
+  .flags h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .flag-item { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; font-size: 12px; line-height: 1.5; }
+  .flag-item:last-child { margin-bottom: 0; }
+  .flag-icon { margin-top: 1px; flex-shrink: 0; }
+
+  .legend-row { display: flex; gap: 20px; flex-wrap: wrap; padding: 10px 20px 14px; font-size: 12px; color: var(--text-muted); }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .legend-line { width: 20px; height: 2px; flex-shrink: 0; }
+  .legend-band { width: 20px; height: 8px; border-radius: 2px; flex-shrink: 0; opacity: 0.35; }
+
+  footer { padding: 16px 32px; color: var(--text-muted); font-size: 11px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MPi Market Intelligence Platform</h1>
+  <span class="sub">India Cards Outstanding Forecast &mdash; Phase 1</span>
+  <span class="badge badge-live">LIVE</span>
+</header>
+
+<div class="kpi-bar" id="kpi-bar">
+  <!-- filled by JS -->
+</div>
+
+<div class="charts">
+  <div class="chart-card">
+    <div class="chart-header">
+      <h2>Credit Cards Outstanding</h2>
+      <span class="badge badge-warn" id="cc-warn" style="display:none">Data flag</span>
+      <span class="meta" id="cc-meta"></span>
+    </div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Actual (PSI)</div>
+      <div class="legend-item"><div class="legend-line" style="background:#3b82f6"></div>Model fit</div>
+      <div class="legend-item"><div class="legend-line" style="background:#f59e0b"></div>12-month forecast</div>
+      <div class="legend-item"><div class="legend-band" style="background:#f59e0b"></div>90% CI</div>
+      <div class="legend-item"><div class="legend-line" style="background:#6366f1;border-top:2px dashed #6366f1;height:0"></div>Structural events</div>
+    </div>
+    <div class="chart-body" id="chart-cc"></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header">
+      <h2>Debit Cards Outstanding</h2>
+      <span class="meta" id="dc-meta"></span>
+    </div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Actual (PSI)</div>
+      <div class="legend-item"><div class="legend-line" style="background:#10b981"></div>Model fit</div>
+      <div class="legend-item"><div class="legend-line" style="background:#f59e0b"></div>12-month forecast</div>
+      <div class="legend-item"><div class="legend-band" style="background:#f59e0b"></div>90% CI</div>
+    </div>
+    <div class="chart-body" id="chart-dc"></div>
+  </div>
+
+  <div class="flags">
+    <h3>Open items &amp; data flags</h3>
+    <div class="flag-item">
+      <span class="flag-icon">&#x26A0;&#xFE0F;</span>
+      <span><strong>Jun-2025 CC dip:</strong> Credit cards outstanding shows -0.80 lakh MoM in Jun-2025 &mdash; the only decline in the Jan 2024&ndash;Feb 2026 window. Needs manual cross-check against RBI PSI Table 41 source Excel before final model fitting.</span>
+    </div>
+    <div class="flag-item">
+      <span class="flag-icon">&#x26A0;&#xFE0F;</span>
+      <span><strong>Rahul Q2 (RuPay credit on UPI):</strong> QR regressor dropped from CC model pending confirmation of whether RuPay-credit-on-UPI transactions are counted inside <code>credit_cards_outstanding_lakh</code>. Decision changes the sign assumption.</span>
+    </div>
+    <div class="flag-item">
+      <span class="flag-icon">&#x26A0;&#xFE0F;</span>
+      <span><strong>card_validity_7yr source:</strong> The Jul-2022 DC step dummy is retained but the specific 5&rarr;7 year card validity circular has not been located in RBI Master Directions. Verify before final DC model sign-off.</span>
+    </div>
+    <div class="flag-item">
+      <span class="flag-icon">&#x2139;&#xFE0F;</span>
+      <span><strong>Nov-2019 PSI splice applied:</strong> Level correction applied to pre-Nov-2019 credit (-0.22%) and debit (-3.87%) outstanding to remove RBI reporting definition change. Debit splice has slope mismatch (ratio=-0.13) &mdash; verify visually.</span>
+    </div>
+    <div class="flag-item">
+      <span class="flag-icon">&#x2139;&#xFE0F;</span>
+      <span><strong>Repo lag = 9 months (CV-selected):</strong> Nested rolling CV (18 folds, Jan 2013&ndash;Feb 2026) chose lag-9 in 12/18 folds. Honest outer-fold MAPE: 2.21% &plusmn; 1.28%.</span>
+    </div>
+  </div>
+</div>
+
+<footer>
+  MPi MIP Phase 1 &mdash; India credit &amp; debit cards outstanding model &mdash; Prophet + structural events &mdash; Data: RBI PSI Table 41
+</footer>
+
+<script>
+// ── Embedded data (generated by build_dashboard.py) ────────────────────────
+// To regenerate: uv run python scripts/build_dashboard.py
+// ── Load data from JSON file ────────────────────────────────────────────────
+fetch('data/processed/mip_data.json')
+  .then(r => r.json())
+  .then(DATA => buildDashboard(DATA))
+  .catch(() => {
+    // Fallback: try to load inline (for fully standalone use, paste JSON below)
+    document.body.innerHTML += '<p style="color:#f87171;padding:32px">Could not load data/processed/mip_data.json. Open this file via a local server or embed data inline.</p>';
+  });
+
+function buildDashboard(DATA) {
+  const EVENTS = DATA.events;
+  const FORECAST_START = DATA.forecast_start;
+  const PLOTLY_LAYOUT_BASE = {
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { color: '#e2e8f0', family: 'Inter, system-ui, sans-serif', size: 12 },
+    margin: { l: 56, r: 24, t: 12, b: 40 },
+    xaxis: {
+      gridcolor: '#2a2d3e', linecolor: '#2a2d3e', tickcolor: '#2a2d3e',
+      tickfont: { size: 11 }, showgrid: true,
+    },
+    yaxis: {
+      gridcolor: '#2a2d3e', linecolor: '#2a2d3e', tickcolor: '#2a2d3e',
+      tickfont: { size: 11 }, showgrid: true,
+    },
+    showlegend: false,
+    hovermode: 'x unified',
+    hoverlabel: { bgcolor: '#1a1d27', bordercolor: '#2a2d3e', font: { color: '#e2e8f0' } },
+  };
+
+  function eventShapes(color) {
+    return Object.entries(EVENTS).map(([name, date]) => ({
+      type: 'line', x0: date, x1: date, y0: 0, y1: 1,
+      yref: 'paper', line: { color, width: 1, dash: 'dot' },
+    }));
+  }
+
+  function eventAnnotations(yref_frac, color) {
+    return Object.entries(EVENTS).map(([name, date]) => ({
+      x: date, y: yref_frac, yref: 'paper',
+      text: name, showarrow: false, textangle: -90,
+      font: { size: 10, color }, xanchor: 'right', yanchor: 'bottom',
+    }));
+  }
+
+  function forecastShade(dates, lower, upper, color) {
+    const mask = dates.map(d => d >= FORECAST_START);
+    const fdates = dates.filter((_, i) => mask[i]);
+    const flower = lower.filter((_, i) => mask[i]);
+    const fupper = upper.filter((_, i) => mask[i]);
+    return {
+      type: 'scatter', x: [...fdates, ...fdates.slice().reverse()],
+      y: [...fupper, ...flower.slice().reverse()],
+      fill: 'toself', fillcolor: color + '30', line: { width: 0 },
+      hoverinfo: 'skip', showlegend: false,
+    };
+  }
+
+  function buildChart(divId, series, accentColor, title) {
+    const dates = series.date;
+    const actual = series.actual_lakh;
+    const yhat = series.yhat_lakh;
+    const lower = series.yhat_lower_lakh;
+    const upper = series.yhat_upper_lakh;
+
+    const histDates = dates.filter((_, i) => actual && actual[i] != null);
+    const histActual = (actual || []).filter(v => v != null);
+
+    // Historical model fit (before forecast_start)
+    const fitDates = dates.filter(d => d < FORECAST_START);
+    const fitYhat = yhat.slice(0, fitDates.length);
+
+    // Forecast
+    const fcDates = dates.filter(d => d >= FORECAST_START);
+    const fcYhat = yhat.slice(fitDates.length);
+    const fcLower = lower.slice(fitDates.length);
+    const fcUpper = upper.slice(fitDates.length);
+
+    const traces = [
+      // CI band
+      {
+        type: 'scatter',
+        x: [...fcDates, ...fcDates.slice().reverse()],
+        y: [...fcUpper, ...fcLower.slice().reverse()],
+        fill: 'toself', fillcolor: '#f59e0b22', line: { width: 0 },
+        hoverinfo: 'skip', showlegend: false,
+      },
+      // Model fit line
+      {
+        type: 'scatter', x: fitDates, y: fitYhat, mode: 'lines',
+        line: { color: accentColor, width: 1.5, dash: 'solid' },
+        name: 'Model fit', hovertemplate: '%{y:.1f} lakh<extra>Fit</extra>',
+      },
+      // Forecast line
+      {
+        type: 'scatter', x: fcDates, y: fcYhat, mode: 'lines',
+        line: { color: '#f59e0b', width: 2 },
+        name: 'Forecast', hovertemplate: '%{y:.1f} lakh<extra>Forecast</extra>',
+      },
+      // Actuals
+      {
+        type: 'scatter', x: histDates, y: histActual, mode: 'markers',
+        marker: { color: accentColor, size: 4, opacity: 0.85 },
+        name: 'Actual', hovertemplate: '%{y:.1f} lakh<extra>Actual</extra>',
+      },
+    ];
+
+    const layout = {
+      ...PLOTLY_LAYOUT_BASE,
+      yaxis: {
+        ...PLOTLY_LAYOUT_BASE.yaxis,
+        title: { text: 'Lakh cards', font: { size: 11, color: '#8892a4' } },
+      },
+      shapes: eventShapes('#6366f188'),
+      annotations: eventAnnotations(0.96, '#8892a4'),
+    };
+
+    Plotly.newPlot(divId, traces, layout, { responsive: true, displayModeBar: false });
+
+    // Meta
+    const lastActual = histActual[histActual.length - 1];
+    const lastFc = fcYhat[fcYhat.length - 1];
+    const pct = ((lastFc - lastActual) / lastActual * 100).toFixed(1);
+    const sign = pct > 0 ? '+' : '';
+    document.getElementById(divId.replace('chart-', '') + '-meta').textContent =
+      `Last actual: ${lastActual.toFixed(1)} lakh  |  Feb 2027 forecast: ${lastFc.toFixed(1)} lakh (${sign}${pct}% vs last)`;
+  }
+
+  // Build both charts
+  buildChart('chart-cc', DATA.cc, '#3b82f6', 'Credit Cards Outstanding');
+  buildChart('chart-dc', DATA.dc, '#10b981', 'Debit Cards Outstanding');
+
+  // Jun-2025 flag on CC
+  document.getElementById('cc-warn').style.display = 'inline-block';
+
+  // KPI bar
+  const cc = DATA.cc;
+  const dc = DATA.dc;
+  function lastActual(series) {
+    const a = series.actual_lakh;
+    for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return { val: a[i], date: series.date[i] };
+    return null;
+  }
+  function lastForecast(series) {
+    const y = series.yhat_lakh;
+    return { val: y[y.length - 1], date: series.date[series.date.length - 1] };
+  }
+  const ccLast = lastActual(cc);
+  const dcLast = lastActual(dc);
+  const ccFc = lastForecast(cc);
+  const dcFc = lastForecast(dc);
+
+  function mom(series) {
+    const a = series.actual_lakh;
+    let last = null, prev = null;
+    for (let i = a.length - 1; i >= 0; i--) {
+      if (a[i] != null) { if (!last) last = a[i]; else if (!prev) { prev = a[i]; break; } }
+    }
+    if (!last || !prev) return null;
+    return ((last - prev) / prev * 100).toFixed(2);
+  }
+
+  const kpis = [
+    { label: 'CC Outstanding (latest)', value: ccLast ? ccLast.val.toFixed(1) + ' L' : '--', delta: mom(cc) ? `${mom(cc) > 0 ? '+' : ''}${mom(cc)}% MoM` : '', dir: mom(cc) > 0 ? 'up' : 'down' },
+    { label: 'CC Feb-2027 Forecast', value: ccFc.val.toFixed(1) + ' L', delta: `${((ccFc.val - ccLast.val) / ccLast.val * 100).toFixed(1)}% vs last actual`, dir: ccFc.val > ccLast.val ? 'up' : 'down' },
+    { label: 'DC Outstanding (latest)', value: dcLast ? (dcLast.val / 1000).toFixed(1) + 'K L' : '--', delta: mom(dc) ? `${mom(dc) > 0 ? '+' : ''}${mom(dc)}% MoM` : '', dir: mom(dc) > 0 ? 'up' : 'down' },
+    { label: 'DC Feb-2027 Forecast', value: (dcFc.val / 1000).toFixed(1) + 'K L', delta: `${((dcFc.val - dcLast.val) / dcLast.val * 100).toFixed(1)}% vs last actual`, dir: dcFc.val > dcLast.val ? 'up' : 'down' },
+    { label: 'CC Model MAPE', value: '3.46%', delta: 'Full CV, lag-9 repo, QR dropped', dir: '' },
+    { label: 'Repo rate (held flat)', value: '6.25%', delta: 'RBI current rate, 9m lag', dir: '' },
+  ];
+
+  const bar = document.getElementById('kpi-bar');
+  bar.innerHTML = kpis.map(k => `
+    <div class="kpi">
+      <div class="label">${k.label}</div>
+      <div class="value">${k.value}</div>
+      <div class="delta ${k.dir}">${k.delta}</div>
+    </div>`).join('');
+}
+</script>
+</body>
+</html>

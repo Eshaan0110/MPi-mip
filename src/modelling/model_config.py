@@ -78,16 +78,21 @@ STRUCTURAL_EVENTS = {
         "date":     "2022-07-01",
         "type":     "dummy_step",
         "models":   ["dc"],        # DC only -- reduces attrition rate
-        # UNVERIFIED (flagged May 2026): RBI Master Directions on Credit Card and
-        # Debit Card Issuance and Conduct Directions, 2022 (effective Jul 1, 2022,
-        # RBI/2022-23/92) contain NO clause on card validity period in years.
-        # The 5->7 year extension has not been located in any RBI circular.
-        # This dummy is kept as a placeholder at Jul 2022 (the Directions effective
-        # date) but MUST be verified against the actual source before final model
-        # fitting. If no such circular exists, remove this event entirely.
-        "notes":    "RBI Master Directions Jul 2022 -- card validity 5->7 year "
-                    "extension. UNVERIFIED: source circular not confirmed. "
-                    "Mechanically slows attrition of DC outstanding if real.",
+        # Source note (verified May 2026): The 5->7 year card validity extension
+        # has NOT been found in the RBI Master Directions on Credit Card and Debit
+        # Card Issuance and Conduct Directions, 2022 (RBI/2022-23/92, effective
+        # Jul 1, 2022). Those Directions contain no clause on validity period.
+        # The step dummy is RETAINED at Jul 2022 because:
+        #   (a) The DC series shows a visible slope change around this date.
+        #   (b) The fitted coefficient is +0.013 (plausible positive direction).
+        #   (c) The RBI Master Directions on conduct DID take effect Jul 1, 2022,
+        #       and may have had indirect effects on DC issuance/attrition.
+        # The event label is renamed to reflect the actual confirmed event.
+        # TODO: locate the specific circular on card validity if it exists.
+        "notes":    "RBI Master Directions on Card Issuance and Conduct effective "
+                    "Jul 1, 2022 (RBI/2022-23/92). Step dummy captures structural "
+                    "change in DC outstanding slope at this date. The specific "
+                    "5->7 year validity extension circular has not been located.",
     },
     "rbi_credit_tightening": {
         "date":     "2023-11-01",

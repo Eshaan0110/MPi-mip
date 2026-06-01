@@ -24,6 +24,7 @@ import pandas as pd
 from loguru import logger
 
 from src.config import PsiFormatConfig, Settings, load_settings
+from src.ingestion.level_splice import BREAK_DATE, splice_series
 from src.ingestion.validation import (
     SchemaValidationError,
     check_data_quality,
@@ -156,6 +157,45 @@ def run_rbi_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     if combined["source_format"].nunique() > 1:
         new_start = combined.loc[combined["source_format"] == "new", "date"].min()
         logger.info(f"Stitched old + new formats at {new_start:%b %Y}")
+
+    # Apply Nov-2019 definitional correction if the series spans the break.
+    # The RBI changed how it counts cards outstanding in Nov 2019 (non-financial
+    # transaction reclassification). This is a measurement change, not a market
+    # event. We estimate and remove the level shift so the pre/post series is
+    # commensurate. See src/ingestion/level_splice.py for methodology.
+    splice_cols = [
+        "credit_cards_outstanding_lakh",
+        "debit_cards_outstanding_lakh",
+    ]
+    spans_break = (
+        (combined["date"] < BREAK_DATE).any()
+        and (combined["date"] >= BREAK_DATE).any()
+    )
+    if spans_break:
+        for col in splice_cols:
+            if col not in combined.columns:
+                logger.warning(f"Splice: column '{col}' not found, skipping.")
+                continue
+            if combined[col].isna().all():
+                logger.warning(f"Splice: '{col}' is all-null, skipping.")
+                continue
+            combined, result = splice_series(combined, col)
+            logger.info(
+                f"Splice '{col}' at {BREAK_DATE.date()}: "
+                f"shift={result.additive_shift:+.2f} lakh "
+                f"({result.relative_shift_pct:+.2f}%) applied to "
+                f"{(combined['date'] < BREAK_DATE).sum()} pre-break rows"
+            )
+            if result.pre_slope != 0:
+                ratio = result.post_slope / result.pre_slope
+                if not (0.5 <= ratio <= 2.0):
+                    logger.warning(
+                        f"Splice '{col}': pre/post slope ratio={ratio:.2f} "
+                        f"(pre={result.pre_slope:+.1f}, post={result.post_slope:+.1f}/mo). "
+                        f"May not be a pure level shift -- verify visually."
+                    )
+    else:
+        logger.debug("Splice: series does not span Nov-2019 break, skipping.")
 
     check_data_quality(
         combined,

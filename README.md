@@ -6,7 +6,7 @@ Phase 1 scope: build the data foundation, forecast cards outstanding
 per issuer, and produce a leadership dashboard with structural events
 modelled explicitly.
 
-> Status: Phase 1 — Task 1 (data foundation) in progress.
+> Status: Phase 1 — aggregate CC/DC models fitted and forecast produced. Dashboard at dashboard.html. Open items: Jun-2025 PSI anomaly (manual check), Rahul Q2 (RuPay-credit-on-UPI), card_validity_7yr circular verification.
 
 ## Project structure
 
