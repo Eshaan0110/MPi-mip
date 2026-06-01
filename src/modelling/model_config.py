@@ -77,9 +77,17 @@ STRUCTURAL_EVENTS = {
     "card_validity_7yr": {
         "date":     "2022-07-01",
         "type":     "dummy_step",
-        "models":   ["dc"],        # DC only — reduces attrition rate
-        "notes":    "RBI Master Directions Jul 2022. Card validity extended 5→7 years. "
-                    "Mechanically slows attrition of DC outstanding.",
+        "models":   ["dc"],        # DC only -- reduces attrition rate
+        # UNVERIFIED (flagged May 2026): RBI Master Directions on Credit Card and
+        # Debit Card Issuance and Conduct Directions, 2022 (effective Jul 1, 2022,
+        # RBI/2022-23/92) contain NO clause on card validity period in years.
+        # The 5->7 year extension has not been located in any RBI circular.
+        # This dummy is kept as a placeholder at Jul 2022 (the Directions effective
+        # date) but MUST be verified against the actual source before final model
+        # fitting. If no such circular exists, remove this event entirely.
+        "notes":    "RBI Master Directions Jul 2022 -- card validity 5->7 year "
+                    "extension. UNVERIFIED: source circular not confirmed. "
+                    "Mechanically slows attrition of DC outstanding if real.",
     },
     "rbi_credit_tightening": {
         "date":     "2023-11-01",
@@ -115,25 +123,26 @@ CC_CONFIG = {
         # Multicollinearity note: cc_vol, upi_qr, repo, cpi all correlate with time.
         # Including all four causes coefficient sign flips. Keep only the two with
         # the strongest distinct economic mechanisms; let trend+changepoints absorb rest.
+        #
+        # upi_qr_lakh DROPPED after QR ablation test (Axiom review, May 2026):
+        #   - Rolling-CV MAPE with QR = 2.64%, without = 2.58% (QR worsens CV).
+        #   - 12-month forecast delta: mean 1.84%, growing to -2.6% by Feb 2027.
+        #   - The negative forecast direction contradicts the assumed positive
+        #     RuPay-credit-on-UPI channel. Pending Rahul Q2 confirmation on whether
+        #     RuPay-credit-on-UPI transactions are already inside credit_outstanding.
+        #     Until confirmed, the sign is ambiguous and the regressor is dropped.
+        #   - If Rahul Q2 confirms inclusion: re-add with lag=3 and re-run ablation.
         RegressorSpec(
             col="repo_rate",
             standardize=True,
-            lag=6,
+            lag=9,
             fill_method="ffill",
             mode="additive",
-            notes="Repo rate lag 6m. Strongest monetary policy signal. Changes "
-                  "discontinuously (not collinear with smooth trend). "
-                  "Rate tightening → banks slow unsecured issuance ~6m later.",
-        ),
-        RegressorSpec(
-            col="upi_qr_lakh",
-            standardize=True,
-            lag=0,
-            fill_method="zero",
-            mode="additive",
-            notes="UPI QR code count. Positive regressor for CC — RuPay credit "
-                  "on UPI = CC issuance tailwind (Rahul Q2 answer). Zero-filled "
-                  "pre-Sep 2020. Adds distinct post-2020 signal not captured by trend.",
+            notes="Repo rate lag 9m. Lag selected by nested rolling CV (18 outer folds, "
+                  "Jan 2013-Feb 2026): lag-9 chosen in 12/18 folds (67%); honest outer "
+                  "MAPE 2.21% +/- 1.28%. Literature prior was 6m (direct cost-of-funds "
+                  "pass-through), but CC APR is fixed so the channel runs through bank "
+                  "risk appetite -- CV result takes precedence.",
         ),
     ],
     # Restrict training start to Jan 2013 — post-GFC recovery complete.
@@ -193,4 +202,27 @@ DC_CONFIG = {
     ],
     "extra_changepoints": ["2019-11-01"],  # PSI definitional change — series break
     "output_stem": "forecast_dc",
+}
+
+
+# ── Data quality flags ─────────────────────────────────────────────────────
+# Known suspect data points that must be cross-checked against RBI source
+# before final model fitting. Do not remove entries here without confirming
+# against the published PSI Excel file.
+DATA_QUALITY_FLAGS = {
+    "jun_2025_cc_dip": {
+        "date":   "2025-06-01",
+        "series": "credit_cards_outstanding_lakh",
+        "value":  1109.69,          # lakh
+        "issue":  "Only month-on-month decline (-0.80 lakh) in the entire "
+                  "Jan 2024 - Feb 2026 window. All surrounding months show "
+                  "+4 to +10 lakh growth. Likely a reporting correction or "
+                  "data entry error in the PSI release. "
+                  "ACTION: download PSI Excel for Jun 2025 from "
+                  "rbi.org.in/Scripts/PSIUserView.aspx and confirm the "
+                  "credit_cards_outstanding figure in Table 41. "
+                  "If confirmed anomalous, add a dummy_pulse event for "
+                  "2025-06-01 to both CC and DC configs.",
+        "status": "UNCONFIRMED",
+    },
 }
