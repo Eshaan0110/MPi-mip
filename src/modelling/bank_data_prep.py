@@ -11,7 +11,8 @@ Responsibilities:
   3. Merge duplicate bank series (after aliasing, sum outstanding per date).
   4. Filter out numeric artifact rows (ingestion residue from summary sheets).
   5. Select top N issuers by average outstanding (model-ready banks only).
-  6. Build residual bucket: all remaining banks aggregated.
+  6. Build residual bucket as PSI total minus the sum of top banks
+     (NOT as the sum of remaining bankwise banks — see build_residual_prophet_df).
   7. Return per-bank Prophet DataFrames and the residual DataFrame.
   8. Log coverage: what % of PSI total do the modelled banks represent.
 """
@@ -29,6 +30,7 @@ from src.modelling.bank_config import (
     MIN_MONTHS,
     BANK_NAME_ALIASES,
     TERMINATED_BANKS,
+    LIVE_BANK_TRAIN_START,
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -48,6 +50,31 @@ def _load_bankwise(card_type: str) -> pd.DataFrame:
     df = pd.read_parquet(path)
     df["date"] = pd.to_datetime(df["date"]).dt.to_period("M").dt.to_timestamp()
     return df
+
+
+def _load_psi_series(card_type: str) -> pd.Series:
+    """Load PSI cards outstanding for the given card type.
+
+    Returns a pd.Series indexed by month-start date, in RAW CARD COUNTS
+    (converted from lakh by multiplying by 1e5 to match bankwise units).
+    """
+    psi_path = _PROCESSED / "rbi_psi_cards.parquet"
+    if not psi_path.exists():
+        raise FileNotFoundError(
+            f"{psi_path} not found. Run `python -m src.ingestion --only rbi` first. "
+            f"The residual bucket requires PSI to compute true coverage."
+        )
+    psi = pd.read_parquet(psi_path)
+    psi["date"] = pd.to_datetime(psi["date"]).dt.to_period("M").dt.to_timestamp()
+    psi_col = "credit_cards_outstanding_lakh" if card_type == "cc" else "debit_cards_outstanding_lakh"
+    if psi_col not in psi.columns:
+        raise KeyError(
+            f"Expected column '{psi_col}' not found in {psi_path}. "
+            f"Available columns: {list(psi.columns)}"
+        )
+    psi_series = psi.set_index("date")[psi_col].dropna()
+    # lakh → raw cards to match bankwise units
+    return (psi_series * 1e5).rename("psi_cards")
 
 
 # ── Cleaning ───────────────────────────────────────────────────────────────
@@ -102,7 +129,9 @@ def _select_top_banks(
     """Return (top_banks, residual_banks) lists.
 
     Top banks: model-ready (>=min_months non-null) ranked by average outstanding.
-    Residual banks: everything else.
+    Residual banks: everything else (retained only for backward-compatible
+    coverage logging — the actual residual model fits to PSI − top_sum, not
+    to these banks summed).
     """
     coverage = (
         df[df[target_col].notna()]
@@ -117,7 +146,6 @@ def _select_top_banks(
     model_ready = coverage[coverage["months"] >= min_months]
     top_banks   = model_ready.head(top_n).index.tolist()
 
-    # All banks not in top N go to residual
     all_banks      = df["bank_name"].unique().tolist()
     residual_banks = [b for b in all_banks if b not in top_banks]
 
@@ -138,7 +166,7 @@ def _log_coverage(
 ) -> float:
     """Log what % of total outstanding the top banks represent.
 
-    Returns coverage fraction (0–1).
+    Returns coverage fraction (0–1) of top banks vs the bankwise total.
     """
     latest_date = df["date"].max()
     latest = df[df["date"] == latest_date]
@@ -169,6 +197,11 @@ def build_bank_prophet_df(
 ) -> pd.DataFrame | None:
     """Build a Prophet-ready (ds, y) DataFrame for one bank.
 
+    For live banks (not in TERMINATED_BANKS), training data is truncated
+    to LIVE_BANK_TRAIN_START onward to avoid CV folds straddling dead
+    regimes (pre-PMJDY rollout completion, pre-UPI). Terminated banks
+    keep their full pre-2020 history since they ended before the new regime.
+
     Returns None if the bank has insufficient data after filtering.
     """
     bank_df = df[df["bank_name"] == bank_name][[
@@ -179,13 +212,23 @@ def build_bank_prophet_df(
     bank_df = bank_df[bank_df["y"].notna() & (bank_df["y"] > 0)].copy()
     bank_df = bank_df.sort_values("ds").reset_index(drop=True)
 
+    # Truncate live banks to post-LIVE_BANK_TRAIN_START
+    if bank_name not in TERMINATED_BANKS:
+        n_before = len(bank_df)
+        bank_df = bank_df[bank_df["ds"] >= LIVE_BANK_TRAIN_START].copy()
+        n_after = len(bank_df)
+        if n_before > n_after:
+            logger.debug(
+                f"  {bank_name}: truncated to post-{LIVE_BANK_TRAIN_START:%b %Y} "
+                f"({n_before} → {n_after} months)"
+            )
+
     if len(bank_df) < MIN_MONTHS:
         logger.warning(
             f"  {bank_name}: only {len(bank_df)} valid rows — skipping individual model"
         )
         return None
 
-    # Flag terminated banks
     if bank_name in TERMINATED_BANKS:
         logger.info(
             f"  {bank_name}: terminated bank ({TERMINATED_BANKS[bank_name]}). "
@@ -201,27 +244,80 @@ def build_bank_prophet_df(
 
 def build_residual_prophet_df(
     df: pd.DataFrame,
-    residual_banks: list[str],
+    top_banks: list[str],
     target_col: str,
+    card_type: str,
 ) -> pd.DataFrame:
-    """Aggregate all residual banks into one combined series for the residual model."""
-    residual_df = (
-        df[df["bank_name"].isin(residual_banks)]
+    """Residual bucket = PSI total − sum(top banks).
+
+    This is the correct residual definition. Summing the "other 67 banks"
+    inside bankwise misses everything bankwise itself doesn't capture —
+    FinTech CC issuers (Slice, OneCard), banking-as-a-service co-brands,
+    and any banks that don't appear in RBI's bankwise reporting at all.
+    Defining residual against PSI guarantees the ground-up aggregate
+    matches PSI in-sample by construction.
+
+    Args:
+        df:          cleaned bankwise DataFrame (full series across all banks)
+        top_banks:   names of the top-N banks being modelled individually
+        target_col:  e.g. 'cc_outstanding' (raw card count in bankwise)
+        card_type:   'cc' or 'dc'
+    """
+    # Sum the top banks at each date (in raw card counts)
+    top_sum = (
+        df[df["bank_name"].isin(top_banks)]
         .groupby("date")[target_col]
         .sum()
-        .reset_index()
-        .rename(columns={"date": "ds", target_col: "y"})
-        .sort_values("ds")
+        .rename("top_sum")
     )
 
-    # Zero months mean no data — treat as null
-    residual_df.loc[residual_df["y"] == 0, "y"] = None
-    residual_df = residual_df[residual_df["y"].notna()].copy()
+    # PSI total in raw cards (lakh × 1e5)
+    psi_cards = _load_psi_series(card_type)
+
+    # Residual = PSI − top_banks (aligned on overlapping dates)
+    aligned = pd.concat([psi_cards, top_sum], axis=1, join="inner")
+    aligned["residual"] = aligned["psi_cards"] - aligned["top_sum"]
+
+    # Drop any pre-period where top_sum is zero (bankwise didn't report yet)
+    # or where residual is negative (top reports higher than PSI for that
+    # month — data quality artifact, e.g. around the May-2025 sheet-41 anomaly
+    # where bankwise drops 20% but PSI doesn't).
+    n_total = len(aligned)
+    aligned = aligned[(aligned["top_sum"] > 0) & (aligned["residual"] > 0)]
+    n_dropped = n_total - len(aligned)
+    if n_dropped > 0:
+        logger.warning(
+            f"  [{card_type.upper()}] Dropped {n_dropped} months from residual fit "
+            f"(zero top_sum or negative residual — data quality)"
+        )
+
+    residual_df = (
+        aligned.reset_index()
+        .rename(columns={"date": "ds", "residual": "y"})
+        [["ds", "y"]]
+        .sort_values("ds")
+        .reset_index(drop=True)
+    )
+
+    if residual_df.empty:
+        raise RuntimeError(
+            f"[{card_type.upper()}] Residual series is empty after alignment. "
+            f"Check PSI date range and bankwise coverage."
+        )
+
+    last_residual = residual_df["y"].iloc[-1]
+    last_psi = aligned["psi_cards"].iloc[-1]
+    last_date = residual_df["ds"].iloc[-1]
 
     logger.info(
-        f"  Residual bucket: {len(residual_banks)} banks | "
-        f"{len(residual_df)} months of combined data | "
-        f"{residual_df['ds'].min():%b %Y} → {residual_df['ds'].max():%b %Y}"
+        f"  [{card_type.upper()}] Residual bucket (PSI − top {len(top_banks)} banks): "
+        f"{len(residual_df)} months | "
+        f"{residual_df['ds'].min():%b %Y} → {last_date:%b %Y}"
+    )
+    logger.info(
+        f"  [{card_type.upper()}] Residual size: "
+        f"{last_residual/1e6:.1f}M cards "
+        f"({last_residual/last_psi*100:.1f}% of PSI) as of {last_date:%b %Y}"
     )
     return residual_df
 
@@ -235,13 +331,13 @@ def load_bank_data(card_type: str) -> dict:
         card_type: 'cc' or 'dc'
 
     Returns dict with keys:
-        df           — cleaned full bankwise DataFrame
-        target_col   — name of the outstanding column
-        top_banks    — list of top N bank names
-        residual_banks — list of remaining bank names
-        bank_dfs     — dict: bank_name → Prophet DataFrame (or None if skipped)
-        residual_df  — Prophet DataFrame for residual bucket
-        coverage_pct — fraction of bankwise total covered by top banks
+        df             — cleaned full bankwise DataFrame
+        target_col     — name of the outstanding column
+        top_banks      — list of top N bank names
+        residual_banks — list of remaining bank names (for logging only)
+        bank_dfs       — dict: bank_name → Prophet DataFrame (or None if skipped)
+        residual_df    — Prophet DataFrame for residual bucket (PSI − top banks)
+        coverage_pct   — fraction of bankwise total covered by top banks
     """
     assert card_type in ("cc", "dc"), "card_type must be 'cc' or 'dc'"
     target_col = f"{card_type}_outstanding"
@@ -261,8 +357,8 @@ def load_bank_data(card_type: str) -> dict:
     for bank in top_banks:
         bank_dfs[bank] = build_bank_prophet_df(df, bank, target_col)
 
-    # Build residual DF
-    residual_df = build_residual_prophet_df(df, residual_banks, target_col)
+    # Build residual DF: PSI − top_banks (NOT the sum of other bankwise banks)
+    residual_df = build_residual_prophet_df(df, top_banks, target_col, card_type)
 
     return {
         "df":             df,

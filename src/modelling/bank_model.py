@@ -7,7 +7,7 @@ the ground-up India total for cross-checking against PSI.
 
 Architecture:
   1. For each top bank: fit Prophet (trend + seasonality + changepoints).
-  2. For residual bucket: fit a simpler Prophet (trend + seasonality only).
+  2. For residual bucket (PSI − sum of top banks): fit a simpler Prophet.
   3. Aggregate all bank forecasts + residual = ground-up India total.
   4. Cross-check: ground-up total vs PSI aggregate (last overlap period).
   5. Save individual bank forecasts + aggregated ground-up outputs.
@@ -104,7 +104,13 @@ def _run_bank_cv(
     bank_name: str,
     card_type: str,
 ) -> dict:
-    """Run CV for one bank model. Returns MAPE stats."""
+    """Run CV for one bank model. Returns MAPE stats.
+
+    Caps per-fold MAPE at 100% before aggregating. A fold predicting 10x
+    or 100x the actual value is a fit failure, not a precision signal —
+    letting it through dominates the mean and produces uninterpretable
+    six-figure "MAPE" values. Median is reported as the headline.
+    """
     from prophet.diagnostics import cross_validation, performance_metrics
 
     try:
@@ -113,30 +119,45 @@ def _run_bank_cv(
             initial=BANK_CV_CONFIG["initial"],
             period=BANK_CV_CONFIG["period"],
             horizon=BANK_CV_CONFIG["horizon"],
-            parallel=BANK_CV_CONFIG.get("parallel", "processes"),
+            parallel=BANK_CV_CONFIG.get("parallel", "threads"),
             disable_tqdm=True,
         )
         metrics = performance_metrics(cv_df)
-        mape_mean = metrics["mape"].mean() * 100
-        mape_min  = metrics["mape"].min()  * 100
-        mape_max  = metrics["mape"].max()  * 100
 
+        # Cap fit-failure folds at 100%
+        n_capped = int((metrics["mape"] > 1.0).sum())
+        metrics["mape"] = metrics["mape"].clip(upper=1.0)
+
+        mape_mean   = metrics["mape"].mean()   * 100
+        mape_median = metrics["mape"].median() * 100
+        mape_min    = metrics["mape"].min()    * 100
+        mape_max    = metrics["mape"].max()    * 100
+
+        capped_note = f", {n_capped} folds capped" if n_capped else ""
         logger.info(
             f"  [{card_type.upper()}] {bank_name}: "
-            f"CV MAPE {mape_mean:.2f}% [{mape_min:.2f}%–{mape_max:.2f}%] "
-            f"({len(metrics)} windows)"
+            f"CV MAPE median {mape_median:.2f}% (mean {mape_mean:.2f}%) "
+            f"[{mape_min:.2f}%–{mape_max:.2f}%] "
+            f"({len(metrics)} windows{capped_note})"
         )
         return {
-            "bank_name": bank_name,
-            "card_type": card_type,
-            "mape_mean": mape_mean,
-            "mape_min":  mape_min,
-            "mape_max":  mape_max,
-            "cv_windows": len(metrics),
+            "bank_name":   bank_name,
+            "card_type":   card_type,
+            "mape_mean":   mape_mean,
+            "mape_median": mape_median,
+            "mape_min":    mape_min,
+            "mape_max":    mape_max,
+            "cv_windows":  len(metrics),
+            "n_capped":    n_capped,
         }
     except Exception as e:
         logger.warning(f"  [{card_type.upper()}] {bank_name}: CV failed — {e}")
-        return {"bank_name": bank_name, "card_type": card_type, "mape_mean": None}
+        return {
+            "bank_name":   bank_name,
+            "card_type":   card_type,
+            "mape_mean":   None,
+            "mape_median": None,
+        }
 
 
 def _forecast_bank(
@@ -186,7 +207,11 @@ def _run_residual_model(
     card_type: str,
     bank_dir: Path,
 ) -> pd.DataFrame:
-    """Fit residual model and return 12-month forecast."""
+    """Fit residual model and return 12-month forecast.
+
+    The residual_df here is PSI − sum(top banks), not a sum of small
+    bankwise banks. See build_residual_prophet_df.
+    """
     from prophet import Prophet
 
     logger.info(f"  [{card_type.upper()}] Fitting residual bucket model...")
@@ -380,16 +405,16 @@ def run_bank_model(
     # Cross-check vs PSI
     crosscheck = _cross_check_vs_psi(groundup, card_type, groundup_dir)
 
-    # Save CV summary
+    # Save CV summary — use median as the headline (mean dominated by fit failures)
     if cv_results:
         cv_df = pd.DataFrame(cv_results)
         cv_df.to_csv(groundup_dir / f"bank_cv_summary_{card_type}.csv", index=False)
-        valid = cv_df[cv_df["mape_mean"].notna()]
+        valid = cv_df[cv_df["mape_median"].notna()]
         if not valid.empty:
             logger.info(
                 f"\n  [{card_type.upper()}] Bank-level CV summary: "
-                f"median MAPE {valid['mape_mean'].median():.2f}% | "
-                f"range [{valid['mape_mean'].min():.2f}%–{valid['mape_mean'].max():.2f}%]"
+                f"median across banks {valid['mape_median'].median():.2f}% | "
+                f"range [{valid['mape_median'].min():.2f}%–{valid['mape_median'].max():.2f}%]"
             )
 
     logger.success(f"\n  [{card_type.upper()}] Ground-up model complete.")
@@ -449,7 +474,7 @@ if __name__ == "__main__":
             print(f"  PSI divergence (avg): {cc['pct_diff'].abs().mean():.1f}%")
 
         if res["cv_results"]:
-            cv_valid = [r for r in res["cv_results"] if r.get("mape_mean")]
+            cv_valid = [r for r in res["cv_results"] if r.get("mape_median")]
             if cv_valid:
-                mapes = [r["mape_mean"] for r in cv_valid]
-                print(f"  Bank CV MAPE (median): {pd.Series(mapes).median():.2f}%")
+                medians = [r["mape_median"] for r in cv_valid]
+                print(f"  Bank CV MAPE (median across banks): {pd.Series(medians).median():.2f}%")

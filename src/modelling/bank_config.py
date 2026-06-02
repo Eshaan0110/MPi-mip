@@ -19,6 +19,8 @@ Rahul spec:
 
 from __future__ import annotations
 
+import pandas as pd
+
 # ── Scope ──────────────────────────────────────────────────────────────────
 TOP_N_ISSUERS = 20          # max individual models per card type
 MIN_MONTHS    = 48          # minimum months to qualify for individual model
@@ -77,6 +79,18 @@ BANK_PROPHET_CONFIG = {
     "seasonality_prior_scale": 5.0,
 }
 
+# ── Training window for live banks ─────────────────────────────────────────
+# Live banks (those still operating) have 120 months of 2011-2025 history.
+# Pre-2017 the CC market was tiny and PMJDY-era DC issuance dominated by
+# RuPay debit cards — both regimes don't apply to the forecast horizon.
+# CV folds starting in 2012-2014 train on a dead regime and produce wildly
+# off-target predictions, dominating the MAPE statistics.
+# Truncating to Jan 2017 keeps the UPI-era dynamics and Nov-2019 reporting
+# change, drops the noisy early-PMJDY window.
+# Terminated banks (Andhra, Corporation, OBC etc.) are NOT truncated —
+# their data ended pre-2020 and the full history is needed.
+LIVE_BANK_TRAIN_START = pd.Timestamp("2017-01-01")
+
 # ── Structural events applied to bank models ──────────────────────────────
 # Same events as aggregate but simpler — changepoints only, no dummy regressors.
 # Dummies require enough data on both sides to estimate; shorter bank series
@@ -111,11 +125,14 @@ BANK_FORECAST_FREQ    = "MS" # month-start
 # ── Cross-validation (lighter than aggregate — shorter series) ────────────
 # Initial window 36 months (shorter than aggregate 48m because bank series
 # have less data). Horizon and step same as aggregate.
+# parallel="threads" on Windows — "processes" causes cmdstanpy file-lock
+# races ("Operation not permitted" errors) when multiple subprocesses share
+# the same Stan working directory.
 BANK_CV_CONFIG = {
     "initial":  "1095 days",   # 36 months
     "period":   "182 days",    # 6-month step
     "horizon":  "182 days",    # 6-month horizon
-    "parallel": "processes",
+    "parallel": "threads",
 }
 
 # ── Output paths (relative to data/processed/) ────────────────────────────
