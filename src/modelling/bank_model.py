@@ -56,6 +56,8 @@ from src.modelling.bank_config import (
 )
 from src.modelling.bank_data_prep import load_bank_data
 
+from src.utils.run_logger import RunLogger
+
 warnings.filterwarnings("ignore")
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -338,6 +340,61 @@ def _cross_check_vs_psi(
     return merged
 
 
+# ── Coverage % vs PSI ─────────────────────────────────────────────────────
+
+def _log_coverage_vs_psi(data: dict, card_type: str) -> float | None:
+    """Compute and log: sum(top 20 latest outstanding) / PSI total * 100.
+
+    Returns coverage percentage, or None if PSI is unavailable.
+    """
+    try:
+        psi_path = _PROCESSED / "rbi_psi_cards.parquet"
+        if not psi_path.exists():
+            logger.warning("PSI parquet not found -- cannot compute coverage %.")
+            return None
+
+        psi = pd.read_parquet(psi_path)
+        psi["date"] = pd.to_datetime(psi["date"]).dt.to_period("M").dt.to_timestamp()
+        psi_col = (
+            "credit_cards_outstanding_lakh"
+            if card_type == "cc"
+            else "debit_cards_outstanding_lakh"
+        )
+
+        df = data["df"]
+        target_col = data["target_col"]
+        top_banks = data["top_banks"]
+
+        # Latest date in bankwise
+        latest_date = df["date"].max()
+        latest = df[df["date"] == latest_date]
+
+        top_sum_cards = latest[latest["bank_name"].isin(top_banks)][target_col].sum()
+        top_sum_lakh = top_sum_cards / 1e5
+
+        psi_latest = psi[psi["date"] == latest_date]
+        if psi_latest.empty:
+            # Try closest date
+            psi_latest = psi[psi["date"] <= latest_date].tail(1)
+
+        if psi_latest.empty or psi_latest[psi_col].isna().all():
+            logger.warning(f"  [{card_type.upper()}] No PSI data at {latest_date.date()} for coverage calc.")
+            return None
+
+        psi_val = psi_latest[psi_col].iloc[0]
+        coverage = (top_sum_lakh / psi_val) * 100
+
+        logger.info(
+            f"\n  [{card_type.upper()}] Ground-up coverage: {coverage:.1f}% of PSI total "
+            f"(top {len(top_banks)} banks = {top_sum_lakh:,.1f} lakh, "
+            f"PSI = {psi_val:,.1f} lakh, as of {latest_date:%b %Y})"
+        )
+        return coverage
+    except Exception as e:
+        logger.warning(f"  [{card_type.upper()}] Coverage calc failed: {e}")
+        return None
+
+
 # ── Main runner ────────────────────────────────────────────────────────────
 
 def run_bank_model(
@@ -417,6 +474,29 @@ def run_bank_model(
                 f"range [{valid['mape_median'].min():.2f}%–{valid['mape_median'].max():.2f}%]"
             )
 
+    # Coverage %: top banks' latest outstanding / PSI total
+    coverage_pct = _log_coverage_vs_psi(data, card_type)
+
+    # Auto-log
+    try:
+        log = RunLogger(f"bank_{card_type}")
+        log.add("Card type", card_type.upper())
+        log.add("Top banks modelled", len(top_banks))
+        gu_latest = groundup[groundup["date"] == groundup["date"].max()]
+        log.add("Ground-up forecast (Feb 2027)", f"{gu_latest['forecast'].sum():,.0f} cards")
+        log.add("90% CI", f"[{gu_latest['forecast_lower'].sum():,.0f}, {gu_latest['forecast_upper'].sum():,.0f}]")
+        if coverage_pct is not None:
+            log.add("Coverage vs PSI", f"{coverage_pct:.1f}%")
+        if cv_results:
+            valid = [r for r in cv_results if r.get("mape_median") is not None]
+            if valid:
+                medians = [r["mape_median"] for r in valid]
+                log.add("Bank CV MAPE median", f"{pd.Series(medians).median():.2f}%")
+                log.add("Bank CV MAPE range", f"[{min(medians):.2f}%, {max(medians):.2f}%]")
+        log.save()
+    except Exception:
+        pass
+
     logger.success(f"\n  [{card_type.upper()}] Ground-up model complete.")
     return {
         "bank_forecasts": bank_forecasts,
@@ -424,6 +504,7 @@ def run_bank_model(
         "groundup":       groundup,
         "crosscheck":     crosscheck,
         "cv_results":     cv_results,
+        "coverage_pct":   coverage_pct,
     }
 
 
