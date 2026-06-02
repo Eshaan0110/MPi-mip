@@ -5,7 +5,6 @@ description = "MPi Market Intelligence Platform — cards outstanding forecastin
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "loguru>=0.7",
-    "neuralprophet>=0.9.0",
     "openpyxl>=3.1",
     "pandas>=2.2",
     "playwright>=1.48",
@@ -13,11 +12,13 @@ dependencies = [
     "prophet>=1.1",
     "pyarrow>=17.0",
     "pydantic>=2.9",
-    "ruptures>=1.1",
-    "scikit-learn>=1.5",
     "statsmodels>=0.14.6",
     "xlrd>=2.0",
 ]
+# Removed (Jun 2026 cleanup):
+#   neuralprophet>=0.9.0  -- on hold, dep conflicts, not used in src/
+#   ruptures>=1.1         -- never imported in src/
+#   scikit-learn>=1.5     -- never imported in src/ (prophet bundles its own)
 
 # Forecasting and dashboard dependencies will be added when Tasks 2 / 5 begin:
 #   prophet, plotly, jinja2, ruptures, scikit-learn
