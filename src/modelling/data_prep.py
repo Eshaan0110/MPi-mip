@@ -185,7 +185,18 @@ def build_training_df(
     """
     df = master.copy()
     target_col = config["target_col"]
-    model_key  = "cc" if "credit" in config["name"] else "dc"
+    # Derive model_key for structural event filtering.
+    # Explicit key in config takes precedence; otherwise infer from name.
+    if "model_key" in config:
+        model_key = config["model_key"]
+    elif "credit" in config["name"]:
+        model_key = "cc"
+    elif "debit" in config["name"]:
+        model_key = "dc"
+    elif "upi" in config["name"]:
+        model_key = "upi"
+    else:
+        model_key = "cc"  # fallback
 
     # Add structural event dummy columns
     df = build_event_columns(df, model_key)

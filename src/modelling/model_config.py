@@ -65,8 +65,9 @@ STRUCTURAL_EVENTS = {
     "covid_shock": {
         "dates":    ["2020-04-01", "2020-05-01"],   # pulse — only these two months
         "type":     "dummy_pulse",
-        "models":   ["cc", "dc"],
-        "notes":    "COVID lockdown. New card issuance halted for ~2 months.",
+        "models":   ["cc", "dc", "upi"],
+        "notes":    "COVID lockdown. Card issuance + transactions halted ~2 months. "
+                    "UPI volume also dipped Apr-May 2020 before surging.",
     },
     "upi_inflection": {
         "date":     "2022-01-01",
@@ -207,6 +208,83 @@ DC_CONFIG = {
     ],
     "extra_changepoints": ["2019-11-01"],  # PSI definitional change — series break
     "output_stem": "forecast_dc",
+}
+
+
+# ── Transaction volume model specifications ───────────────────────────────
+# These model card transaction volumes (lakh transactions/month), not
+# cards outstanding. Same Prophet framework, different targets and regressors.
+
+CC_VOL_CONFIG = {
+    "name": "credit_card_vol_lakh",
+    "target_col": "credit_card_vol_lakh",
+    "prophet_kwargs": {
+        **PROPHET_BASE,
+        "changepoint_prior_scale": 0.05,
+        "seasonality_prior_scale": 10.0,
+    },
+    "regressors": [
+        RegressorSpec(
+            col="credit_cards_outstanding_lakh",
+            standardize=True,
+            lag=0,
+            fill_method="linear",
+            mode="multiplicative",
+            notes="More cards = more transactions. Multiplicative because the "
+                  "effect is proportional to the base volume level.",
+        ),
+    ],
+    "training_start": "2013-01-01",
+    "structural_events": ["demonetisation", "covid_shock"],
+    "extra_changepoints": [],
+    "output_stem": "forecast_cc_vol",
+}
+
+DC_VOL_CONFIG = {
+    "name": "debit_card_vol_lakh",
+    "target_col": "debit_card_vol_lakh",
+    "prophet_kwargs": {
+        **PROPHET_BASE,
+        "seasonality_mode": "additive",
+        "changepoint_prior_scale": 0.1,
+        "seasonality_prior_scale": 10.0,
+    },
+    # No UPI regressor -- UPI volume is so dominant that including it as a
+    # linear regressor drives the forecast to zero. The UPI displacement
+    # effect is better captured by the Jan-2022 changepoint (slope break)
+    # and the Nov-2016 demonetisation changepoint (digitisation inflection).
+    # The DC vol series peaked in 2019 and has been declining; Prophet's
+    # piecewise trend handles this without an explicit regressor.
+    "regressors": [],
+    # Training starts Nov 2019 (new PSI format). Including the pre-2019 growth
+    # era (DC vol grew 2004-2019 then collapsed 93% by 2026) causes Prophet to
+    # average growth and decline, producing nonsensical forecasts.
+    # Post-2019 is the UPI displacement regime we actually want to forecast.
+    "training_start": "2019-11-01",
+    "structural_events": ["covid_shock"],
+    "extra_changepoints": [
+        "2022-01-01",   # UPI P2M overtakes DC POS — acceleration of decline
+    ],
+    "output_stem": "forecast_dc_vol",
+}
+
+UPI_VOL_CONFIG = {
+    "name": "upi_volume_mn",
+    "target_col": "upi_volume_mn",
+    "prophet_kwargs": {
+        **PROPHET_BASE,
+        "seasonality_mode": "multiplicative",
+        "changepoint_prior_scale": 0.15,     # aggressive — UPI has multiple regime changes
+        "seasonality_prior_scale": 10.0,
+    },
+    "regressors": [],  # pure trend + seasonality — no meaningful exogenous regressors
+    "training_start": None,  # use all available data (Apr 2016+)
+    "structural_events": ["covid_shock"],
+    "extra_changepoints": [
+        "2018-01-01",   # Google Pay launch accelerated adoption
+        "2020-10-01",   # post-COVID digital payments inflection
+    ],
+    "output_stem": "forecast_upi_vol",
 }
 
 
