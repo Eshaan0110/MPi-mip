@@ -44,6 +44,8 @@ from src.modelling.data_prep import (
     build_future_df,
 )
 
+from src.utils.run_logger import RunLogger
+
 warnings.filterwarnings("ignore")
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -201,6 +203,24 @@ def run_txn_volume_models(run_cv: bool = True) -> dict:
             "forecast": forecast,
             "cv_metrics": cv_metrics,
         }
+
+    # Auto-log
+    try:
+        for key, res in results.items():
+            config = {"cc_vol": CC_VOL_CONFIG, "dc_vol": DC_VOL_CONFIG, "upi_vol": UPI_VOL_CONFIG}[key]
+            log = RunLogger(f"txn_{key}")
+            log.add("Target", config["target_col"])
+            log.add("Training rows", len(res["train_df"]))
+            if not res["cv_metrics"].empty:
+                mape = res["cv_metrics"]["mape"] * 100
+                log.add("CV MAPE mean", f"{mape.mean():.2f}%")
+            fc = res["forecast"]
+            log.add("Feb 2027 forecast", f"{fc['forecast'].iloc[-1]:.1f}")
+            log.add("90% CI", f"[{fc['forecast_lower'].iloc[-1]:.1f}, {fc['forecast_upper'].iloc[-1]:.1f}]")
+            log.add_section("Regressors", [f"{r.col} (lag={r.lag})" for r in config["regressors"]] or ["None (trend + seasonality only)"])
+            log.save()
+    except Exception:
+        pass
 
     logger.info("\n=== Transaction Volume Models Complete ===")
     return results
