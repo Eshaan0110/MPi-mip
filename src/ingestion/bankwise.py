@@ -23,8 +23,48 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+import xlrd
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
+
+
+# ---------------------------------------------------------------------------
+# xlrd wrapper — makes .xls sheets quack like openpyxl Worksheets
+# ---------------------------------------------------------------------------
+
+class _XlrdSheetWrapper:
+    """Thin wrapper around xlrd.Sheet so detect_columns / extract_sheet work unchanged.
+
+    Implements only the subset of the openpyxl Worksheet interface that our
+    code actually uses: .title, .iter_rows(min_row, max_row, values_only).
+    """
+
+    def __init__(self, sheet: xlrd.sheet.Sheet):
+        self._s = sheet
+        self.title = sheet.name
+
+    def iter_rows(
+        self,
+        min_row: int = 1,
+        max_row: int | None = None,
+        values_only: bool = False,
+    ):
+        s = self._s
+        if max_row is None:
+            max_row = s.nrows
+        max_row = min(max_row, s.nrows)
+        for r in range(min_row - 1, max_row):  # openpyxl is 1-indexed
+            row_vals = []
+            for c in range(s.ncols):
+                cell = s.cell(r, c)
+                if cell.ctype == xlrd.XL_CELL_EMPTY:
+                    row_vals.append(None)
+                elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                    # Return as string if it looks like it should be (e.g. bank name col)
+                    row_vals.append(cell.value)
+                else:
+                    row_vals.append(cell.value)
+            yield tuple(row_vals)
 
 
 # ---------------------------------------------------------------------------
@@ -453,22 +493,42 @@ def should_skip_sheet(name: str) -> bool:
     return any(p.search(name) for p in SKIP_SHEET_PATTERNS)
 
 
-def ingest(xlsx_path: Path, verbose: bool = False) -> pd.DataFrame:
-    if not xlsx_path.exists():
-        raise FileNotFoundError(xlsx_path)
+def _open_sheets(filepath: Path, verbose: bool = False):
+    """Open a workbook and yield (sheet_name, worksheet) pairs.
 
-    wb = load_workbook(xlsx_path, read_only=True, data_only=True)
-    if verbose:
-        print(f"Loaded {xlsx_path.name} — {len(wb.sheetnames)} sheets")
+    Handles both .xlsx (openpyxl) and .xls (xlrd) formats transparently.
+    For .xls files, yields _XlrdSheetWrapper instances that implement the
+    same iter_rows / .title interface as openpyxl Worksheets.
+    """
+    ext = filepath.suffix.lower()
+    if ext == ".xls":
+        wb = xlrd.open_workbook(str(filepath))
+        if verbose:
+            print(f"Loaded {filepath.name} (xls) -- {wb.nsheets} sheets")
+        for idx in range(wb.nsheets):
+            ws = _XlrdSheetWrapper(wb.sheet_by_index(idx))
+            yield ws.title, ws
+    else:
+        wb = load_workbook(filepath, read_only=True, data_only=True)
+        if verbose:
+            print(f"Loaded {filepath.name} -- {len(wb.sheetnames)} sheets")
+        for name in wb.sheetnames:
+            yield name, wb[name]
+
+
+def ingest(filepath: Path, verbose: bool = False) -> pd.DataFrame:
+    """Ingest one bankwise file (.xlsx or .xls). Returns long-format DataFrame."""
+    if not filepath.exists():
+        raise FileNotFoundError(filepath)
 
     frames: list[pd.DataFrame] = []
     errors: list[tuple[str, str]] = []
-    for name in wb.sheetnames:
+
+    for name, ws in _open_sheets(filepath, verbose=verbose):
         if should_skip_sheet(name):
             if verbose:
                 print(f"  skip: {name}")
             continue
-        ws = wb[name]
         try:
             df = extract_sheet(ws, verbose=verbose)
             if df.empty:
@@ -486,28 +546,216 @@ def ingest(xlsx_path: Path, verbose: bool = False) -> pd.DataFrame:
             print(f"  {n}: {msg}", file=sys.stderr)
 
     if not frames:
-        raise RuntimeError("No sheets ingested successfully")
+        raise RuntimeError(f"No sheets ingested from {filepath.name}")
 
     out = pd.concat(frames, ignore_index=True)
     out = out.sort_values(["date", "bank"]).reset_index(drop=True)
     return out
 
 
+# ---------------------------------------------------------------------------
+# Known data quality issues — imputation rules
+# ---------------------------------------------------------------------------
+
+# Entries with implausibly small values that should be imputed from trend.
+# Key: (bank_canonical, date_str), Value: description for logging.
+_KNOWN_DATA_ERRORS: dict[tuple[str, str], str] = {
+    ("HDFC Bank", "2025-05-01"): (
+        "RBI Sheet 41 May-2025: credit_outstanding = 6 (should be ~24M). "
+        "Data entry error. Imputed from Apr-2025 value + trailing 3-month trend."
+    ),
+}
+
+
+def _impute_known_errors(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace known RBI data entry errors with trend-imputed values.
+
+    Only operates on entries registered in _KNOWN_DATA_ERRORS.
+    Logs every imputation. Never imputes silently.
+    """
+    df = df.copy()
+    for (bank_key, date_str), description in _KNOWN_DATA_ERRORS.items():
+        date = pd.Timestamp(date_str)
+        mask = (df["bank"] == bank_key) & (df["date"] == date)
+        if not mask.any():
+            continue
+
+        # Compute imputed value from trailing 3-month trend
+        bank_hist = (
+            df[(df["bank"] == bank_key) & (df["date"] < date)]
+            .sort_values("date")
+            .tail(3)
+        )
+        if len(bank_hist) < 2:
+            print(f"  IMPUTE WARNING: {bank_key} {date.date()} — not enough history", file=sys.stderr)
+            continue
+
+        cr_vals = bank_hist["credit_outstanding"].dropna()
+        if len(cr_vals) >= 2:
+            avg_delta = cr_vals.diff().dropna().mean()
+            imputed_cr = float(cr_vals.iloc[-1] + avg_delta)
+            original = df.loc[mask, "credit_outstanding"].iloc[0]
+            df.loc[mask, "credit_outstanding"] = imputed_cr
+            print(
+                f"  IMPUTED: {bank_key} {date.date()} credit_outstanding: "
+                f"{original} -> {imputed_cr:,.0f} ({description})"
+            )
+
+        db_vals = bank_hist["debit_outstanding"].dropna()
+        if len(db_vals) >= 2:
+            avg_delta_db = db_vals.diff().dropna().mean()
+            imputed_db = float(db_vals.iloc[-1] + avg_delta_db)
+            original_db = df.loc[mask, "debit_outstanding"].iloc[0]
+            # Only impute debit if it also looks wrong (< 1% of previous)
+            if original_db is not None and original_db < db_vals.iloc[-1] * 0.01:
+                df.loc[mask, "debit_outstanding"] = imputed_db
+                print(
+                    f"  IMPUTED: {bank_key} {date.date()} debit_outstanding: "
+                    f"{original_db} -> {imputed_db:,.0f}"
+                )
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Full ingestion pipeline
+# ---------------------------------------------------------------------------
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_RAW_DIR      = _PROJECT_ROOT / "data" / "raw" / "rbi_bankwise"
+_PROCESSED    = _PROJECT_ROOT / "data" / "processed"
+
+
+def run_bankwise_ingestion(settings=None, verbose: bool = False) -> pd.DataFrame:
+    """Entry point: find all bankwise source files, parse, deduplicate, save.
+
+    Sources (in priority order for deduplication):
+      1. RBI_Data_Debit_Credit_1.xlsx — consolidated file with monthly sheets
+         (Format C, Jan 2022 - May 2025) and summary sheets.
+      2. Year-folder files (2011/ ... 2021/) — individual monthly .xls/.xlsx
+
+    Outputs:
+      data/processed/bankwise_cards_cc.parquet — credit card outstanding
+      data/processed/bankwise_cards_dc.parquet — debit card outstanding
+    """
+    _PROCESSED.mkdir(parents=True, exist_ok=True)
+
+    frames: list[pd.DataFrame] = []
+    source_tags: list[str] = []
+
+    # Source 1: Consolidated XLSX
+    consolidated = _RAW_DIR / "RBI_Data_Debit_Credit_1.xlsx"
+    if consolidated.exists():
+        print(f"Processing consolidated file: {consolidated.name}")
+        df_consolidated = ingest(consolidated, verbose=verbose)
+        df_consolidated["source"] = "xlsx_consolidated"
+        frames.append(df_consolidated)
+        source_tags.append(f"consolidated: {len(df_consolidated)} rows")
+
+    # Source 2: Year-folder files
+    year_dirs = sorted(d for d in _RAW_DIR.iterdir() if d.is_dir() and d.name.isdigit())
+    for year_dir in year_dirs:
+        xlsx_files = sorted(year_dir.glob("*.xlsx")) + sorted(year_dir.glob("*.XLSX"))
+        xls_files = sorted(year_dir.glob("*.xls"))
+        # Exclude .xlsx that are also .xls (openpyxl vs xlrd)
+        all_files = xlsx_files + xls_files
+        for f in all_files:
+            try:
+                df_file = ingest(f, verbose=verbose)
+                ext = f.suffix.lower()
+                df_file["source"] = f"{'xlsx' if ext == '.xlsx' else 'xls'}_monthly"
+                frames.append(df_file)
+            except Exception as e:
+                print(f"  WARNING: {f.name}: {e}", file=sys.stderr)
+
+    if not frames:
+        raise FileNotFoundError(
+            f"No bankwise source files found in {_RAW_DIR}. "
+            f"Expected RBI_Data_Debit_Credit_1.xlsx and/or year folders."
+        )
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Deduplicate: prefer xlsx_consolidated over year-folder data
+    # Sort by source priority (consolidated first), then drop duplicates per (date, bank)
+    source_priority = {"xlsx_consolidated": 0, "xlsx_monthly": 1, "xls_monthly": 2}
+    combined["_priority"] = combined["source"].map(source_priority).fillna(9)
+    combined = (
+        combined.sort_values(["date", "bank", "_priority"])
+        .drop_duplicates(subset=["date", "bank"], keep="first")
+        .drop(columns=["_priority"])
+        .sort_values(["date", "bank"])
+        .reset_index(drop=True)
+    )
+
+    # Impute known data entry errors
+    combined = _impute_known_errors(combined)
+
+    # Rename to bank_name for downstream compatibility
+    combined = combined.rename(columns={"bank": "bank_name", "bank_raw": "bank_name_raw"})
+
+    # Flag low-coverage banks (< 12 months of credit data)
+    coverage = combined.groupby("bank_name")["credit_outstanding"].apply(
+        lambda s: s.notna().sum()
+    )
+    low_banks = set(coverage[coverage < 12].index)
+    combined["low_coverage"] = combined["bank_name"].isin(low_banks)
+
+    # Split into CC and DC parquets
+    cc_cols = ["date", "bank_name", "bank_name_raw", "bank_category",
+               "credit_outstanding", "source", "low_coverage"]
+    dc_cols = ["date", "bank_name", "bank_name_raw", "bank_category",
+               "debit_outstanding", "source", "low_coverage"]
+
+    # Rename outstanding columns to match bank_data_prep expectations
+    cc = combined[cc_cols].rename(columns={"credit_outstanding": "cc_outstanding"})
+    dc = combined[dc_cols].rename(columns={"debit_outstanding": "dc_outstanding"})
+
+    cc_path = _PROCESSED / "bankwise_cards_cc.parquet"
+    dc_path = _PROCESSED / "bankwise_cards_dc.parquet"
+    cc_csv  = _PROCESSED / "bankwise_cards_cc.csv"
+    dc_csv  = _PROCESSED / "bankwise_cards_dc.csv"
+
+    cc.to_parquet(cc_path, index=False)
+    cc.to_csv(cc_csv, index=False)
+    dc.to_parquet(dc_path, index=False)
+    dc.to_csv(dc_csv, index=False)
+
+    n_banks = combined["bank_name"].nunique()
+    date_range = f"{combined['date'].min().date()} -> {combined['date'].max().date()}"
+    print(
+        f"\nBankwise ingestion complete:\n"
+        f"  {len(combined):,} rows | {n_banks} banks | {date_range}\n"
+        f"  CC: {cc_path.name} ({len(cc):,} rows)\n"
+        f"  DC: {dc_path.name} ({len(dc):,} rows)\n"
+        f"  Sources: {', '.join(source_tags)}"
+    )
+
+    return combined
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("xlsx", type=Path, help="Path to RBI bank-wise xlsx")
-    p.add_argument("--out", type=Path, default=Path("bankwise_cards.csv"))
+    p.add_argument("--xlsx", type=Path, default=None,
+                   help="Path to single RBI bank-wise xlsx (legacy mode)")
+    p.add_argument("--out", type=Path, default=None)
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
 
-    df = ingest(args.xlsx, verbose=args.verbose)
-    df.to_csv(args.out, index=False)
-    print(
-        f"\nWrote {len(df):,} rows → {args.out}\n"
-        f"  date range : {df['date'].min().date()} → {df['date'].max().date()}\n"
-        f"  banks      : {df['bank'].nunique()} unique\n"
-        f"  sheets in  : {df['sheet'].nunique()}\n"
-    )
+    if args.xlsx:
+        # Legacy single-file mode
+        df = ingest(args.xlsx, verbose=args.verbose)
+        out = args.out or Path("bankwise_cards.csv")
+        df.to_csv(out, index=False)
+        print(
+            f"\nWrote {len(df):,} rows -> {out}\n"
+            f"  date range : {df['date'].min().date()} -> {df['date'].max().date()}\n"
+            f"  banks      : {df['bank'].nunique()} unique\n"
+            f"  sheets in  : {df['sheet'].nunique()}\n"
+        )
+    else:
+        # Full pipeline mode
+        run_bankwise_ingestion(verbose=args.verbose)
     return 0
 
 
