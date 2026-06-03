@@ -169,7 +169,14 @@ def _forecast_bank(
     card_type: str,
     bank_dir: Path,
 ) -> pd.DataFrame:
-    """Generate forecast for one bank. Saves and returns forecast df."""
+    """Generate forecast for one bank. Saves and returns forecast df.
+
+    For terminated banks, all forecast rows after the exit date are clipped
+    to zero -- these banks no longer issue cards independently and should
+    contribute nothing to the forward ground-up aggregate.
+    """
+    from src.modelling.bank_config import TERMINATED_BANKS
+
     future = model.make_future_dataframe(
         periods=BANK_FORECAST_PERIODS,
         freq=BANK_FORECAST_FREQ,
@@ -190,6 +197,22 @@ def _forecast_bank(
     full["actual"] = bank_df.set_index("ds")["y"].reindex(full["date"]).values
     full["bank_name"] = bank_name
     full["card_type"] = card_type
+
+    # Hard-stop: clip terminated bank forecasts at exit date
+    if bank_name in TERMINATED_BANKS:
+        exit_date = pd.Timestamp(TERMINATED_BANKS[bank_name]["exit_date"])
+        # Clip forecast df
+        clip_mask_fc = fc["date"] > exit_date
+        if clip_mask_fc.any():
+            fc.loc[clip_mask_fc, ["forecast", "forecast_lower", "forecast_upper"]] = 0.0
+            logger.info(
+                f"  [{card_type.upper()}] {bank_name}: forecast clipped at "
+                f"{exit_date:%b %Y} (exit date) -- {clip_mask_fc.sum()} months zeroed"
+            )
+        # Clip full df (for dashboard)
+        clip_mask_full = full["date"] > exit_date
+        if clip_mask_full.any():
+            full.loc[clip_mask_full, ["yhat", "yhat_lower", "yhat_upper"]] = 0.0
 
     # Sanitise bank name for filename
     safe_name = bank_name.lower().replace(" ", "_").replace(".", "").replace("/", "_")
