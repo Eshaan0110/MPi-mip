@@ -1,6 +1,6 @@
 # UPI Relationship Analysis
 
-Generated: 2026-06-03 03:22
+Generated: 2026-06-03 11:06
 Data range: Apr 2004 -- Feb 2026
 
 ## 1. UPI vs Debit Card Displacement
@@ -21,11 +21,11 @@ Strongest correlation at lag 1: r = -0.958
 
 | Lag (months) | Correlation |
 |:---:|:---:|
-| 0 | +0.753 |
-| 1 | +0.755 |
-| 2 | +0.758 |
-| 3 | +0.761 |
-| 6 | +0.767 |
+| 0 | +0.777 |
+| 1 | +0.779 |
+| 2 | +0.782 |
+| 3 | +0.784 |
+| 6 | +0.791 |
 
 Linear fit R-squared (UPI vol vs DC txn vol): **0.552**
 The relationship is **moderately linear**.
@@ -53,8 +53,8 @@ The UPI-CC relationship is **complementary (positive)** at lag 0 (r = +0.983).
 
 | Lag (months) | Correlation |
 |:---:|:---:|
-| 0 | +0.951 |
-| 1 | +0.949 |
+| 0 | +0.950 |
+| 1 | +0.948 |
 | 2 | +0.947 |
 | 3 | +0.946 |
 | 6 | +0.942 |

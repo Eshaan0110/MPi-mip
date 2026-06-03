@@ -65,7 +65,7 @@ def build_data() -> dict:
             "cc_outstanding": 3.46,
             "dc_outstanding": 7.08,
             "cc_vol": 13.63,
-            "dc_vol": 19.51,
+            "dc_vol": "N/A",
             "upi_vol": 12.31,
             "cc_bank_median": 12.75,
             "dc_bank_median": 9.84,

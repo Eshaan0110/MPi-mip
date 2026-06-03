@@ -655,10 +655,15 @@ def run_bankwise_ingestion(settings=None, verbose: bool = False) -> pd.DataFrame
     # Source 2: Year-folder files
     year_dirs = sorted(d for d in _RAW_DIR.iterdir() if d.is_dir() and d.name.isdigit())
     for year_dir in year_dirs:
-        xlsx_files = sorted(year_dir.glob("*.xlsx")) + sorted(year_dir.glob("*.XLSX"))
-        xls_files = sorted(year_dir.glob("*.xls"))
-        # Exclude .xlsx that are also .xls (openpyxl vs xlrd)
-        all_files = xlsx_files + xls_files
+        # Deduplicate: Windows glob is case-insensitive, so *.xlsx and *.XLSX
+        # return the same files. Use a set of lowercased stems to avoid doubles.
+        seen: set[str] = set()
+        all_files: list[Path] = []
+        for f in sorted(year_dir.iterdir()):
+            if f.suffix.lower() in (".xls", ".xlsx") and f.name.lower() not in seen:
+                seen.add(f.name.lower())
+                all_files.append(f)
+        print(f"  {year_dir.name}/: {len(all_files)} files")
         for f in all_files:
             try:
                 df_file = ingest(f, verbose=verbose)

@@ -256,15 +256,21 @@ DC_VOL_CONFIG = {
     # The DC vol series peaked in 2019 and has been declining; Prophet's
     # piecewise trend handles this without an explicit regressor.
     "regressors": [],
-    # Training starts Nov 2019 (new PSI format). Including the pre-2019 growth
-    # era (DC vol grew 2004-2019 then collapsed 93% by 2026) causes Prophet to
-    # average growth and decline, producing nonsensical forecasts.
-    # Post-2019 is the UPI displacement regime we actually want to forecast.
-    "training_start": "2019-11-01",
-    "structural_events": ["covid_shock"],
-    "extra_changepoints": [
-        "2022-01-01",   # UPI P2M overtakes DC POS — acceleration of decline
-    ],
+    # Training starts Jan 2022 (UPI displacement regime only). Including
+    # pre-2022 data contaminates the forecast: Prophet averages across a
+    # 15-year growth regime and a 3-year decline regime, producing a posterior
+    # trend slope with enormous variance. The Nov-2019 window produced a
+    # 90% CI of [14, 846] at Feb 2027 -- a 35x range, indefensible for
+    # production use.
+    #
+    # Post-Jan-2022 gives ~50 months of pure decline data. Shorter than
+    # ideal for Prophet seasonality (< 4 full annual cycles), but the
+    # trade-off is a dramatically tighter CI because the model is not
+    # averaging across contradictory regimes. Seasonality prior is
+    # loosened to compensate for the short window.
+    "training_start": "2022-01-01",
+    "structural_events": [],
+    "extra_changepoints": [],
     "output_stem": "forecast_dc_vol",
 }
 
