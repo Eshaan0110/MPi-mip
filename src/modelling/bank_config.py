@@ -52,16 +52,18 @@ BANK_NAME_ALIASES: dict[str, str] = {
 
 # Banks whose series terminates due to merger/exit — not excluded,
 # but documented so the dashboard can annotate them.
-TERMINATED_BANKS: dict[str, str] = {
-    "State Bank Of Hyderabad":           "Merged into SBI, April 2017",
-    "State Bank Of Bikaner And Jaipur":  "Merged into SBI, April 2017",
-    "State Bank Of Travancore":          "Merged into SBI, April 2017",
-    "Andhra Bank":                       "Merged into Union Bank, April 2020",
-    "Syndicate Bank":                    "Merged into Canara Bank, April 2020",
-    "Corporation Bank":                  "Merged into Union Bank, April 2020",
-    "United Bank Of India":              "Merged into Punjab National Bank, April 2020",
-    "Citibank":                          "Exited India retail, March 2023",
-    "American Express":                  "Restricted by RBI, April 2021",
+# "reason" is for logging; "exit_date" is used to clip forecast output
+# to zero after this date (the bank no longer issues cards independently).
+TERMINATED_BANKS: dict[str, dict] = {
+    "State Bank Of Hyderabad":           {"reason": "Merged into SBI, April 2017",              "exit_date": "2017-04-01"},
+    "State Bank Of Bikaner And Jaipur":  {"reason": "Merged into SBI, April 2017",              "exit_date": "2017-04-01"},
+    "State Bank Of Travancore":          {"reason": "Merged into SBI, April 2017",              "exit_date": "2017-04-01"},
+    "Andhra Bank":                       {"reason": "Merged into Union Bank, April 2020",       "exit_date": "2020-04-01"},
+    "Syndicate Bank":                    {"reason": "Merged into Canara Bank, April 2020",      "exit_date": "2020-04-01"},
+    "Corporation Bank":                  {"reason": "Merged into Union Bank, April 2020",       "exit_date": "2020-04-01"},
+    "United Bank Of India":              {"reason": "Merged into Punjab National Bank, April 2020", "exit_date": "2020-04-01"},
+    "Citibank":                          {"reason": "Exited India retail, March 2023",          "exit_date": "2023-03-01"},
+    "American Express":                  {"reason": "Restricted by RBI, April 2021",            "exit_date": "2021-04-01"},
 }
 
 # ── Prophet config for individual bank models ─────────────────────────────
@@ -79,17 +81,22 @@ BANK_PROPHET_CONFIG = {
     "seasonality_prior_scale": 5.0,
 }
 
-# ── Training window for live banks ─────────────────────────────────────────
-# Live banks (those still operating) have 120 months of 2011-2025 history.
-# Pre-2017 the CC market was tiny and PMJDY-era DC issuance dominated by
-# RuPay debit cards — both regimes don't apply to the forecast horizon.
-# CV folds starting in 2012-2014 train on a dead regime and produce wildly
-# off-target predictions, dominating the MAPE statistics.
-# Truncating to Jan 2017 keeps the UPI-era dynamics and Nov-2019 reporting
-# change, drops the noisy early-PMJDY window.
-# Terminated banks (Andhra, Corporation, OBC etc.) are NOT truncated —
+# ── Training windows for live banks (per card type) ───────────────────────
+# Terminated banks (Andhra, Corporation, OBC etc.) are NOT truncated --
 # their data ended pre-2020 and the full history is needed.
-LIVE_BANK_TRAIN_START = pd.Timestamp("2017-01-01")
+#
+# CC: 2013-01-01.  Credit card programs were clean before 2017. PMJDY did
+#   not affect CC data (it issued debit cards only). Including 2013-2016
+#   adds 4 years of good growth data that improves trend estimation.
+#
+# DC: 2017-01-01.  Pre-2017 DC data is distorted by PMJDY mass issuance
+#   (2014-2016) which produced a one-time structural jump unrelated to
+#   organic growth. Including it makes CV folds straddle two regimes.
+CC_LIVE_BANK_TRAIN_START = pd.Timestamp("2013-01-01")
+DC_LIVE_BANK_TRAIN_START = pd.Timestamp("2017-01-01")
+
+# Legacy alias -- kept for any code that imports the old name
+LIVE_BANK_TRAIN_START = DC_LIVE_BANK_TRAIN_START
 
 # ── Structural events applied to bank models ──────────────────────────────
 # Same events as aggregate but simpler — changepoints only, no dummy regressors.

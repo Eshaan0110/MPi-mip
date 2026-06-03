@@ -30,7 +30,8 @@ from src.modelling.bank_config import (
     MIN_MONTHS,
     BANK_NAME_ALIASES,
     TERMINATED_BANKS,
-    LIVE_BANK_TRAIN_START,
+    CC_LIVE_BANK_TRAIN_START,
+    DC_LIVE_BANK_TRAIN_START,
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -188,19 +189,34 @@ def _log_coverage(
     return coverage_pct / 100
 
 
+# ── Per-bank training cutoff overrides ────────────────────────────────────
+# Some CC banks have pre-2017 data that belongs to an incompatible regime
+# (e.g. HDFC and ICICI had different growth dynamics pre-demonetisation;
+# Union Bank's pre-merger series is incompatible with the post-triple-merger
+# entity). These banks revert to the DC-style 2017-01-01 cutoff even for CC.
+_CC_CUTOFF_OVERRIDES: dict[str, pd.Timestamp] = {
+    "HDFC Bank":          DC_LIVE_BANK_TRAIN_START,   # pre-2017 growth regime incompatible
+    "ICICI Bank":         DC_LIVE_BANK_TRAIN_START,   # pre-demonetisation trajectory differs
+    "Union Bank of India": DC_LIVE_BANK_TRAIN_START,  # pre-triple-merger entity doesn't exist
+}
+
+
 # ── Prophet DataFrame builder ──────────────────────────────────────────────
 
 def build_bank_prophet_df(
     df: pd.DataFrame,
     bank_name: str,
     target_col: str,
+    card_type: str = "cc",
 ) -> pd.DataFrame | None:
     """Build a Prophet-ready (ds, y) DataFrame for one bank.
 
     For live banks (not in TERMINATED_BANKS), training data is truncated
-    to LIVE_BANK_TRAIN_START onward to avoid CV folds straddling dead
-    regimes (pre-PMJDY rollout completion, pre-UPI). Terminated banks
-    keep their full pre-2020 history since they ended before the new regime.
+    to a card-type-specific start date:
+      - CC: 2013-01-01 default, with per-bank overrides for banks whose
+        pre-2017 data is an incompatible regime (see _CC_CUTOFF_OVERRIDES)
+      - DC: 2017-01-01 (pre-2017 distorted by PMJDY mass issuance)
+    Terminated banks keep their full history.
 
     Returns None if the bank has insufficient data after filtering.
     """
@@ -212,15 +228,21 @@ def build_bank_prophet_df(
     bank_df = bank_df[bank_df["y"].notna() & (bank_df["y"] > 0)].copy()
     bank_df = bank_df.sort_values("ds").reset_index(drop=True)
 
-    # Truncate live banks to post-LIVE_BANK_TRAIN_START
+    # Truncate live banks to the appropriate cutoff
     if bank_name not in TERMINATED_BANKS:
+        if card_type == "cc" and bank_name in _CC_CUTOFF_OVERRIDES:
+            cutoff = _CC_CUTOFF_OVERRIDES[bank_name]
+        elif card_type == "cc":
+            cutoff = CC_LIVE_BANK_TRAIN_START
+        else:
+            cutoff = DC_LIVE_BANK_TRAIN_START
         n_before = len(bank_df)
-        bank_df = bank_df[bank_df["ds"] >= LIVE_BANK_TRAIN_START].copy()
+        bank_df = bank_df[bank_df["ds"] >= cutoff].copy()
         n_after = len(bank_df)
         if n_before > n_after:
             logger.debug(
-                f"  {bank_name}: truncated to post-{LIVE_BANK_TRAIN_START:%b %Y} "
-                f"({n_before} → {n_after} months)"
+                f"  {bank_name}: truncated to post-{cutoff:%b %Y} "
+                f"({card_type.upper()} cutoff) ({n_before} -> {n_after} months)"
             )
 
     if len(bank_df) < MIN_MONTHS:
@@ -230,9 +252,10 @@ def build_bank_prophet_df(
         return None
 
     if bank_name in TERMINATED_BANKS:
+        reason = TERMINATED_BANKS[bank_name]["reason"]
         logger.info(
-            f"  {bank_name}: terminated bank ({TERMINATED_BANKS[bank_name]}). "
-            f"Model fits to available history only; forecast extrapolates trend."
+            f"  {bank_name}: terminated bank ({reason}). "
+            f"Model fits to available history only; forecast clipped at exit date."
         )
 
     logger.debug(
@@ -355,7 +378,7 @@ def load_bank_data(card_type: str) -> dict:
     # Build individual Prophet DFs
     bank_dfs: dict[str, pd.DataFrame | None] = {}
     for bank in top_banks:
-        bank_dfs[bank] = build_bank_prophet_df(df, bank, target_col)
+        bank_dfs[bank] = build_bank_prophet_df(df, bank, target_col, card_type)
 
     # Build residual DF: PSI − top_banks (NOT the sum of other bankwise banks)
     residual_df = build_residual_prophet_df(df, top_banks, target_col, card_type)
