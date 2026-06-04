@@ -1,6 +1,6 @@
 # UPI Relationship Analysis
 
-Generated: 2026-06-03 11:06
+Generated: 2026-06-03 12:07
 Data range: Apr 2004 -- Feb 2026
 
 ## 1. UPI vs Debit Card Displacement
