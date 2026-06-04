@@ -82,8 +82,15 @@ def _fit_bank_model(
     prophet_config: dict,
     bank_name: str,
 ) -> object:
-    """Fit Prophet model for one bank. Returns fitted model."""
+    """Fit Prophet model for one bank. Returns fitted model.
+
+    Handles:
+      - Per-bank Prophet config overrides (from BANK_PROPHET_OVERRIDES)
+      - Merger step dummy columns (added by bank_data_prep, registered as regressors)
+      - Shared structural changepoints (filtered to training window)
+    """
     from prophet import Prophet
+    from src.modelling.bank_config import BANK_PROPHET_OVERRIDES
 
     # Filter changepoints to those within the training window
     valid_cps = [
@@ -93,10 +100,20 @@ def _fit_bank_model(
     ]
 
     cfg = dict(prophet_config)
+    # Apply per-bank overrides
+    if bank_name in BANK_PROPHET_OVERRIDES:
+        cfg.update(BANK_PROPHET_OVERRIDES[bank_name])
     if valid_cps:
         cfg["changepoints"] = valid_cps
 
     m = Prophet(**cfg)
+
+    # Register merger dummy columns as regressors
+    merger_cols = [c for c in bank_df.columns if c.startswith("merger_")]
+    for col in merger_cols:
+        m.add_regressor(col, standardize=False, mode="additive")
+        logger.debug(f"    Regressor added: {col}")
+
     m.fit(bank_df)
     return m
 
@@ -106,7 +123,12 @@ def _run_bank_cv(
     bank_name: str,
     card_type: str,
 ) -> dict:
-    """Run CV for one bank model. Returns MAPE stats.
+    """Run CV for one bank model. Returns MAPE stats on ORIGINAL scale.
+
+    When USE_LOG_TRANSFORM is True the model was trained on log1p(y).
+    Prophet's cross_validation returns y/yhat in that log space.
+    We inverse-transform (expm1) BEFORE calling performance_metrics so
+    that MAPE is on the original card-count scale — not the log scale.
 
     Caps per-fold MAPE at 100% before aggregating. A fold predicting 10x
     or 100x the actual value is a fit failure, not a precision signal —
@@ -114,6 +136,7 @@ def _run_bank_cv(
     six-figure "MAPE" values. Median is reported as the headline.
     """
     from prophet.diagnostics import cross_validation, performance_metrics
+    from src.modelling.bank_config import USE_LOG_TRANSFORM
 
     try:
         cv_df  = cross_validation(
@@ -124,6 +147,15 @@ def _run_bank_cv(
             parallel=BANK_CV_CONFIG.get("parallel", "threads"),
             disable_tqdm=True,
         )
+
+        # Back-transform to original scale before computing MAPE.
+        # Without this, MAPE is measured on log1p values (~20x lower than
+        # real-scale MAPE) and comparisons across model versions are invalid.
+        if USE_LOG_TRANSFORM:
+            for col in ["y", "yhat", "yhat_lower", "yhat_upper"]:
+                if col in cv_df.columns:
+                    cv_df[col] = np.expm1(cv_df[col])
+
         metrics = performance_metrics(cv_df)
 
         # Cap fit-failure folds at 100%
@@ -171,50 +203,78 @@ def _forecast_bank(
 ) -> pd.DataFrame:
     """Generate forecast for one bank. Saves and returns forecast df.
 
-    For terminated banks, all forecast rows after the exit date are clipped
-    to zero -- these banks no longer issue cards independently and should
-    contribute nothing to the forward ground-up aggregate.
+    Handles:
+      - log1p back-transform (expm1) if USE_LOG_TRANSFORM
+      - Merger dummy columns in the future DataFrame
+      - Terminated bank clipping at exit date
     """
-    from src.modelling.bank_config import TERMINATED_BANKS
+    from src.modelling.bank_config import TERMINATED_BANKS, USE_LOG_TRANSFORM
 
     future = model.make_future_dataframe(
         periods=BANK_FORECAST_PERIODS,
         freq=BANK_FORECAST_FREQ,
     )
+
+    # Carry forward merger dummy columns into future rows
+    merger_cols = [c for c in bank_df.columns if c.startswith("merger_")]
+    for col in merger_cols:
+        # Merger dummies are step functions: 1 from merger date onward
+        # All future dates are post-merger, so set to 1.0
+        future[col] = 1.0
+        # But for historical rows, use actual values
+        hist_vals = bank_df.set_index("ds")[col]
+        for idx in future.index:
+            ds = future.loc[idx, "ds"]
+            if ds in hist_vals.index:
+                future.loc[idx, col] = hist_vals[ds]
+
     forecast = model.predict(future)
+
+    # Back-transform from log scale if needed
+    if USE_LOG_TRANSFORM:
+        for col in ["yhat", "yhat_lower", "yhat_upper", "trend"]:
+            if col in forecast.columns:
+                forecast[col] = np.expm1(forecast[col])
 
     last_hist = bank_df["ds"].max()
     fc = forecast[forecast["ds"] > last_hist][[
         "ds", "yhat", "yhat_lower", "yhat_upper", "trend"
     ]].copy()
     fc.columns = ["date", "forecast", "forecast_lower", "forecast_upper", "trend"]
-    fc["bank_name"]  = bank_name
-    fc["card_type"]  = card_type
+    fc["bank_name"] = bank_name
+    fc["card_type"] = card_type
 
-    # Also save the full historical fit + forecast (for dashboard)
+    # Full historical fit + forecast (for dashboard)
     full = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
     full.columns = ["date", "yhat", "yhat_lower", "yhat_upper"]
-    full["actual"] = bank_df.set_index("ds")["y"].reindex(full["date"]).values
+    # Actuals: back-transform from log if needed
+    actual_series = bank_df.set_index("ds")["y"]
+    if USE_LOG_TRANSFORM:
+        actual_series = np.expm1(actual_series)
+    full["actual"] = actual_series.reindex(full["date"]).values
     full["bank_name"] = bank_name
     full["card_type"] = card_type
+
+    # Clip negative values (can happen with expm1 on lower bounds)
+    for col in ["forecast", "forecast_lower", "forecast_upper"]:
+        fc[col] = fc[col].clip(lower=0)
+    for col in ["yhat", "yhat_lower", "yhat_upper"]:
+        full[col] = full[col].clip(lower=0)
 
     # Hard-stop: clip terminated bank forecasts at exit date
     if bank_name in TERMINATED_BANKS:
         exit_date = pd.Timestamp(TERMINATED_BANKS[bank_name]["exit_date"])
-        # Clip forecast df
-        clip_mask_fc = fc["date"] > exit_date
-        if clip_mask_fc.any():
-            fc.loc[clip_mask_fc, ["forecast", "forecast_lower", "forecast_upper"]] = 0.0
+        clip_fc = fc["date"] > exit_date
+        if clip_fc.any():
+            fc.loc[clip_fc, ["forecast", "forecast_lower", "forecast_upper"]] = 0.0
             logger.info(
                 f"  [{card_type.upper()}] {bank_name}: forecast clipped at "
-                f"{exit_date:%b %Y} (exit date) -- {clip_mask_fc.sum()} months zeroed"
+                f"{exit_date:%b %Y} -- {clip_fc.sum()} months zeroed"
             )
-        # Clip full df (for dashboard)
-        clip_mask_full = full["date"] > exit_date
-        if clip_mask_full.any():
-            full.loc[clip_mask_full, ["yhat", "yhat_lower", "yhat_upper"]] = 0.0
+        clip_full = full["date"] > exit_date
+        if clip_full.any():
+            full.loc[clip_full, ["yhat", "yhat_lower", "yhat_upper"]] = 0.0
 
-    # Sanitise bank name for filename
     safe_name = bank_name.lower().replace(" ", "_").replace(".", "").replace("/", "_")
     stem = f"{card_type}_{safe_name}"
 
@@ -239,6 +299,8 @@ def _run_residual_model(
     """
     from prophet import Prophet
 
+    from src.modelling.bank_config import USE_LOG_TRANSFORM
+
     logger.info(f"  [{card_type.upper()}] Fitting residual bucket model...")
     m = Prophet(**RESIDUAL_PROPHET_CONFIG)
     m.fit(residual_df)
@@ -249,6 +311,11 @@ def _run_residual_model(
     )
     forecast = m.predict(future)
 
+    # Back-transform from log scale
+    if USE_LOG_TRANSFORM:
+        for col in ["yhat", "yhat_lower", "yhat_upper"]:
+            forecast[col] = np.expm1(forecast[col])
+
     last_hist = residual_df["ds"].max()
     fc = forecast[forecast["ds"] > last_hist][[
         "ds", "yhat", "yhat_lower", "yhat_upper"
@@ -257,11 +324,15 @@ def _run_residual_model(
     fc["bank_name"] = "_RESIDUAL"
     fc["card_type"] = card_type
 
+    # Clip negatives
+    for col in ["forecast", "forecast_lower", "forecast_upper"]:
+        fc[col] = fc[col].clip(lower=0)
+
     fc.to_parquet(bank_dir / f"{card_type}_residual_forecast.parquet", index=False)
     fc.to_csv(bank_dir / f"{card_type}_residual_forecast.csv", index=False)
     logger.info(
         f"  [{card_type.upper()}] Residual forecast: "
-        f"{fc['forecast'].iloc[0]:,.0f} → {fc['forecast'].iloc[-1]:,.0f}"
+        f"{fc['forecast'].iloc[0]:,.0f} -> {fc['forecast'].iloc[-1]:,.0f}"
     )
     return fc
 
