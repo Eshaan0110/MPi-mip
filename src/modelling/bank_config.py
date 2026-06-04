@@ -1,20 +1,21 @@
 """
-MIP Modelling — Bank-Level Configuration
+MIP Modelling -- Bank-Level Configuration
 ==========================================
 All parameters for the bank-level ground-up model.
-Edit here only — no changes needed in model code.
+Edit here only -- no changes needed in model code.
 
 Architecture:
-  - Top N issuers modelled individually with Prophet (trend + seasonality only)
-  - Remaining banks aggregated into a residual bucket (simple trend model)
+  - Explicit bank lists for CC (10) and DC (15) individual models
+  - Remaining banks aggregated into a residual bucket (PSI - top banks)
   - Individual forecasts + residual = ground-up India total
   - Cross-check against PSI aggregate to validate coverage and accuracy
 
-Rahul spec:
-  - Top 20 issuers per card type
-  - <48 months data = out of scope for individual modelling (residual bucket)
-  - Approach 2 for regressors: use historical fit only, no forward projection needed
-  - Document coverage: what % of total market does modelled issuer data represent
+Enhancement (Jun 2026):
+  - Explicit bank lists replace auto-selection by average outstanding
+  - Per-bank start dates aligned to stable regimes (post-merger where applicable)
+  - log1p(y) transform for variance stabilisation
+  - Per-bank changepoint_prior_scale tuning
+  - Explicit merger step dummies for absorbed-entity banks
 """
 
 from __future__ import annotations
@@ -22,38 +23,60 @@ from __future__ import annotations
 import pandas as pd
 
 # ── Scope ──────────────────────────────────────────────────────────────────
-TOP_N_ISSUERS = 20          # max individual models per card type
-MIN_MONTHS    = 48          # minimum months to qualify for individual model
+# Legacy auto-selection parameters (kept for backward compatibility)
+TOP_N_ISSUERS = 20
+MIN_MONTHS    = 48
+
+# Explicit bank lists -- these override TOP_N_ISSUERS auto-selection.
+# CC: 10 banks covering ~91% of India total.
+# DC: 15 banks covering ~83% of India total.
+CC_BANK_LIST: list[str] = [
+    "HDFC Bank",
+    "State Bank of India",
+    "ICICI Bank",
+    "Axis Bank",
+    "Kotak Mahindra Bank",
+    "IndusInd Bank",
+    "Bank of Baroda",
+    "Yes Bank",
+    "Canara Bank",
+    "HSBC",
+]
+
+DC_BANK_LIST: list[str] = [
+    "State Bank of India",
+    "Bank of Baroda",
+    "Canara Bank",
+    "HDFC Bank",
+    "Union Bank of India",
+    "Punjab National Bank",
+    "Axis Bank",
+    "Bank of India",
+    "Kotak Mahindra Bank",
+    "Indian Bank",
+    "Central Bank of India",
+    "UCO Bank",
+    "ICICI Bank",
+    "Indian Overseas Bank",
+    "Paytm Payments Bank",
+]
+
 
 # ── Bank name canonical map ────────────────────────────────────────────────
-# Resolves duplicate raw names from different RBI file formats into one
-# canonical name. Key = raw bank_name in bankwise parquet, Value = canonical.
-# Extend this when new duplicates are found.
 BANK_NAME_ALIASES: dict[str, str] = {
-    # HDFC appears under two names across format generations
     "Hdfc  Bank Ltd.":                        "HDFC Bank",
-    # Citi appears under two names
     "Citi Bank":                              "Citibank",
-    # American Express appears under three names
     "American Express Banking Corporation":   "American Express",
     "American Express Bkg. Corp.":            "American Express",
-    # HSBC variants
     "Hongkong And Shanghai Bkg Corpn":        "HSBC",
-    # SBI associates (merged into SBI in 2017 — keep separate pre-merger,
-    # but flag that their series terminates at the merger date)
     "State Bank Of Hyderabad":                "State Bank Of Hyderabad",
     "State Bank Of Bikaner And Jaipur":       "State Bank Of Bikaner And Jaipur",
     "State Bank Of Travancore":               "State Bank Of Travancore",
-    # HDFC DC variant
-    "Hdfc  Bank Ltd.":                        "HDFC Bank",
-    # Union Bank variants
     "Union  Bank Of India":                   "Union Bank Of India",
 }
 
-# Banks whose series terminates due to merger/exit — not excluded,
-# but documented so the dashboard can annotate them.
-# "reason" is for logging; "exit_date" is used to clip forecast output
-# to zero after this date (the bank no longer issues cards independently).
+
+# ── Terminated banks ──────────────────────────────────────────────────────
 TERMINATED_BANKS: dict[str, dict] = {
     "State Bank Of Hyderabad":           {"reason": "Merged into SBI, April 2017",              "exit_date": "2017-04-01"},
     "State Bank Of Bikaner And Jaipur":  {"reason": "Merged into SBI, April 2017",              "exit_date": "2017-04-01"},
@@ -66,82 +89,138 @@ TERMINATED_BANKS: dict[str, dict] = {
     "American Express":                  {"reason": "Restricted by RBI, April 2021",            "exit_date": "2021-04-01"},
 }
 
-# ── Prophet config for individual bank models ─────────────────────────────
-# Simpler than the aggregate model — Approach 2 (no forward regressors).
-# Trend + seasonality + structural events only.
-# No regressors: bank-level series are too short and sparse for reliable
-# regressor coefficients (Rahul: Approach 2 for bank-level).
+
+# ── Per-bank training start dates ─────────────────────────────────────────
+# Key: (bank_name, card_type) -> Timestamp
+# Philosophy: use the longest STABLE regime, not the longest history.
+# Merger banks start after the merger settles (typically 1-3 months after
+# the legal effective date to allow for portfolio integration noise).
+# Clean banks use the card-type default (CC=2013, DC=2017).
+
+CC_LIVE_BANK_TRAIN_START = pd.Timestamp("2013-01-01")  # default for CC
+DC_LIVE_BANK_TRAIN_START = pd.Timestamp("2017-01-01")  # default for DC
+LIVE_BANK_TRAIN_START = DC_LIVE_BANK_TRAIN_START        # legacy alias
+
+BANK_START_DATES: dict[tuple[str, str], pd.Timestamp] = {
+    # CC overrides
+    ("HDFC Bank",           "cc"): pd.Timestamp("2017-01-01"),  # pre-2017 growth regime differs
+    ("State Bank of India", "cc"): pd.Timestamp("2017-04-01"),  # post SBI associate merger
+    ("ICICI Bank",          "cc"): pd.Timestamp("2017-01-01"),  # pre-demonetisation trajectory differs
+    ("Kotak Mahindra Bank", "cc"): pd.Timestamp("2018-01-01"),  # hypergrowth started 2018; flat before
+    ("Bank of Baroda",      "cc"): pd.Timestamp("2019-04-01"),  # post Dena+Vijaya merger
+    ("Yes Bank",            "cc"): pd.Timestamp("2020-06-01"),  # post moratorium reconstruction
+    ("Canara Bank",         "cc"): pd.Timestamp("2020-04-01"),  # post Syndicate merger
+    # Axis, IndusInd, HSBC: use CC default (2013-01-01) -- clean series
+
+    # DC overrides
+    ("State Bank of India", "dc"): pd.Timestamp("2017-04-01"),  # post associate merger
+    ("Bank of Baroda",      "dc"): pd.Timestamp("2019-04-01"),  # post Dena+Vijaya merger
+    ("Canara Bank",         "dc"): pd.Timestamp("2020-04-01"),  # post Syndicate merger
+    ("Union Bank of India", "dc"): pd.Timestamp("2020-04-01"),  # post triple merger
+    ("Punjab National Bank","dc"): pd.Timestamp("2020-04-01"),  # post OBC+United merger
+    ("Indian Bank",         "dc"): pd.Timestamp("2020-04-01"),  # post Allahabad merger
+    ("Paytm Payments Bank", "dc"): pd.Timestamp("2018-04-01"),  # launched Apr 2018
+    # HDFC, Axis, BoI, Kotak, Central, UCO, ICICI, IOB: use DC default (2017-01-01)
+}
+
+
+# ── Merger step dummies (per bank) ────────────────────────────────────────
+# For banks that absorbed other entities, an explicit step dummy at the
+# merger date tells Prophet exactly where the portfolio jumped. This is
+# more reliable than relying on automatic changepoint detection.
+#
+# REQUIREMENT: the training window must SPAN the merger date — i.e. there
+# must be meaningful pre-merger observations in the training series.
+# If the bank's start date (BANK_START_DATES) is on or after the merger
+# date, the dummy is all-1s in training and is collinear with the intercept.
+# Such dummies waste a regressor slot and can destabilise Stan's optimiser.
+#
+# Audit (Jun 2026): all previously configured dummies were non-functional
+# because every affected bank's start date was set to the merger date itself.
+# The dictionary is intentionally left empty. Re-populate if start dates are
+# ever moved earlier than the merger date for a given bank.
+BANK_MERGER_EVENTS: dict[tuple[str, str], dict] = {
+    # Example (re-enable only if start date is set BEFORE the merger date):
+    # ("Bank of Baroda", "cc"): {"date": "2019-04-01", "label": "merger_dena_vijaya"},
+}
+
+
+# ── Per-bank Prophet config overrides ─────────────────────────────────────
+# Merger banks need higher changepoint_prior_scale to capture the step.
+# Stable banks can use lower values for smoother fits.
+BANK_PROPHET_OVERRIDES: dict[str, dict] = {
+    # Merger banks: more flexible trend
+    "Bank of Baroda":       {"changepoint_prior_scale": 0.15},
+    "Canara Bank":          {"changepoint_prior_scale": 0.15},
+    "Union Bank of India":  {"changepoint_prior_scale": 0.15},
+    "Punjab National Bank": {"changepoint_prior_scale": 0.15},
+    "Indian Bank":          {"changepoint_prior_scale": 0.15},
+    "Yes Bank":             {"changepoint_prior_scale": 0.15},
+    # Stable banks: tighter trend
+    "HDFC Bank":            {"changepoint_prior_scale": 0.03},
+    "State Bank of India":  {"changepoint_prior_scale": 0.03},
+    "ICICI Bank":           {"changepoint_prior_scale": 0.03},
+    "Axis Bank":            {"changepoint_prior_scale": 0.03},
+    "IndusInd Bank":        {"changepoint_prior_scale": 0.03},
+}
+
+
+# ── Base Prophet config ──────────────────────────────────────────────────
 BANK_PROPHET_CONFIG = {
     "yearly_seasonality":      True,
     "weekly_seasonality":      False,
     "daily_seasonality":       False,
-    "seasonality_mode":        "additive",   # additive safer for shorter series
+    "seasonality_mode":        "additive",
     "interval_width":          0.90,
-    "changepoint_prior_scale": 0.05,         # conservative — avoid overfitting short series
+    "changepoint_prior_scale": 0.05,     # default; overridden per bank above
     "seasonality_prior_scale": 5.0,
 }
 
-# ── Training windows for live banks (per card type) ───────────────────────
-# Terminated banks (Andhra, Corporation, OBC etc.) are NOT truncated --
-# their data ended pre-2020 and the full history is needed.
-#
-# CC: 2013-01-01.  Credit card programs were clean before 2017. PMJDY did
-#   not affect CC data (it issued debit cards only). Including 2013-2016
-#   adds 4 years of good growth data that improves trend estimation.
-#
-# DC: 2017-01-01.  Pre-2017 DC data is distorted by PMJDY mass issuance
-#   (2014-2016) which produced a one-time structural jump unrelated to
-#   organic growth. Including it makes CV folds straddle two regimes.
-CC_LIVE_BANK_TRAIN_START = pd.Timestamp("2013-01-01")
-DC_LIVE_BANK_TRAIN_START = pd.Timestamp("2017-01-01")
 
-# Legacy alias -- kept for any code that imports the old name
-LIVE_BANK_TRAIN_START = DC_LIVE_BANK_TRAIN_START
+# ── log1p transform ──────────────────────────────────────────────────────
+# Applied to all bank models. Stabilises variance for series growing from
+# thousands to millions. Prophet assumes constant-variance residuals;
+# log-transform makes this assumption hold. Back-transform with expm1()
+# after prediction.
+USE_LOG_TRANSFORM = True
 
-# ── Structural events applied to bank models ──────────────────────────────
-# Same events as aggregate but simpler — changepoints only, no dummy regressors.
-# Dummies require enough data on both sides to estimate; shorter bank series
-# may not have this. Changepoints are more robust for shorter windows.
+
+# ── Structural events (shared changepoints) ──────────────────────────────
 BANK_CHANGEPOINTS = [
-    "2014-08-01",   # PMJDY — mass DC issuance (DC models only)
+    "2014-08-01",   # PMJDY
     "2016-11-01",   # Demonetisation
     "2020-04-01",   # COVID
-    "2022-01-01",   # UPI inflection (DC models only)
+    "2022-01-01",   # UPI inflection
 ]
 
 CC_BANK_CHANGEPOINTS = ["2016-11-01", "2020-04-01"]
 DC_BANK_CHANGEPOINTS = ["2014-08-01", "2016-11-01", "2020-04-01", "2022-01-01"]
 
-# ── Residual model config ─────────────────────────────────────────────────
-# For banks with <48 months OR outside top 20.
-# Pure trend + seasonality — no changepoints (not enough data to anchor them).
+
+# ── Residual model config ────────────────────────────────────────────────
 RESIDUAL_PROPHET_CONFIG = {
     "yearly_seasonality":      True,
     "weekly_seasonality":      False,
     "daily_seasonality":       False,
     "seasonality_mode":        "additive",
     "interval_width":          0.90,
-    "changepoint_prior_scale": 0.01,   # very conservative
+    "changepoint_prior_scale": 0.01,
     "seasonality_prior_scale": 5.0,
 }
 
-# ── Forecast settings ─────────────────────────────────────────────────────
-BANK_FORECAST_PERIODS = 12   # months forward
-BANK_FORECAST_FREQ    = "MS" # month-start
 
-# ── Cross-validation (lighter than aggregate — shorter series) ────────────
-# Initial window 36 months (shorter than aggregate 48m because bank series
-# have less data). Horizon and step same as aggregate.
-# parallel="threads" on Windows — "processes" causes cmdstanpy file-lock
-# races ("Operation not permitted" errors) when multiple subprocesses share
-# the same Stan working directory.
+# ── Forecast + CV settings ───────────────────────────────────────────────
+BANK_FORECAST_PERIODS = 12
+BANK_FORECAST_FREQ    = "MS"
+
 BANK_CV_CONFIG = {
     "initial":  "1095 days",   # 36 months
     "period":   "182 days",    # 6-month step
     "horizon":  "182 days",    # 6-month horizon
-    "parallel": "threads",
+    "parallel": "threads",     # Windows: threads avoids cmdstanpy file-lock races
 }
 
-# ── Output paths (relative to data/processed/) ────────────────────────────
-BANK_OUTPUT_DIR     = "bankwise_forecasts"   # individual bank forecast files go here
-GROUNDUP_OUTPUT_DIR = "groundup"             # aggregated ground-up outputs go here
+
+# ── Output paths ─────────────────────────────────────────────────────────
+BANK_OUTPUT_DIR     = "bankwise_forecasts"
+GROUNDUP_OUTPUT_DIR = "groundup"
