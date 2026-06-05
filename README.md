@@ -8,8 +8,8 @@ modelled explicitly.
 
 > Status: Phase 1 complete. All models fitted and forecasting. Dashboard at `dashboard.html`.
 >
-> **Models live:** Aggregate CC/DC outstanding, 20+20 bank-level CC/DC, CC/DC/UPI transaction volumes.
-> **Open items:** Jun-2025 PSI anomaly (manual check), Rahul Q2 (RuPay-credit-on-UPI), card_validity_7yr circular.
+> **Models live:** Aggregate CC/DC outstanding, top-10 CC + top-15 DC bank-level ground-up, CC/DC/UPI transaction volumes.
+> **Open items:** CC bank over-forecasting in 2026 growth normalisation (Kotak, BoB, IndusInd); switch stable banks from Prophet to ETS.
 
 ## Project structure
 

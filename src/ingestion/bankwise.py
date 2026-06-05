@@ -236,6 +236,24 @@ class ColumnMap:
     credit_outstanding_col: int
     debit_outstanding_col: int
     header_end_row: int       # last row that is header text, not data
+    # Infrastructure (optional — present in all formats from 2011)
+    atm_onsite_col:   int | None = None
+    atm_offsite_col:  int | None = None
+    pos_col:          int | None = None   # Format C: single col; Format A: online PoS
+    pos_offline_col:  int | None = None   # Format A only: offline PoS (sum with pos_col)
+    micro_atm_col:    int | None = None
+    bharat_qr_col:    int | None = None
+    upi_qr_col:       int | None = None
+    # CC transaction volumes (optional)
+    cc_pos_vol_col:      int | None = None
+    cc_online_vol_col:   int | None = None
+    cc_others_vol_col:   int | None = None
+    cc_atm_cash_vol_col: int | None = None
+    # DC transaction volumes (optional)
+    dc_pos_vol_col:      int | None = None
+    dc_online_vol_col:   int | None = None
+    dc_others_vol_col:   int | None = None
+    dc_atm_cash_vol_col: int | None = None
 
 
 def _stringify(v) -> str:
@@ -393,11 +411,99 @@ def detect_columns(ws: Worksheet) -> ColumnMap:
         if any("number - outstanding" in v or "no. of outstanding" in v for v in row):
             header_end_row = max(header_end_row, i + 1)
 
+    # ── Extra columns (Format A 2011-2021 and Format B/C 2020+) ─────────────
+    # Build a per-column signature by joining all non-empty header cell texts.
+    # All extra cols are optional: if not found we return None and the sheet
+    # is still processed normally.
+    #
+    # Format A (2011-2021): ATMs | PoS(online) | PoS(offline) | CC outstanding |
+    #   CC txn ATM | CC txn PoS | DC outstanding | DC txn ATM | DC txn PoS
+    # Format C (2022+): ATMs | PoS | Micro ATM | Bharat QR | UPI QR |
+    #   CC outstanding | DC outstanding | CC PoS/Online/Others/Cash | DC same
+
+    def col_sig(j: int) -> str:
+        return " | ".join(r[j] for r in filled if j < len(r) and r[j])
+
+    def find_col(*keyword_sets) -> int | None:
+        """Return 1-indexed column whose signature matches ANY of the keyword sets.
+        Each set is a tuple of strings that must ALL be present (AND within set,
+        OR between sets).
+        """
+        sets = [keyword_sets] if isinstance(keyword_sets[0], str) else list(keyword_sets)
+        for j in range(max_col):
+            sig = col_sig(j)
+            for kws in sets:
+                if all(kw in sig for kw in kws):
+                    return j + 1
+        return None
+
+    # ATMs — same keyword in both formats
+    atm_onsite  = find_col(("atms", "on-site"),  ("atms & crms", "on-site"))
+    atm_offsite = find_col(("atms", "off-site"), ("atms & crms", "off-site"))
+
+    # PoS terminals
+    # Format A: two cols (online + offline) — we take online as primary,
+    #   offline stored separately and summed in extract_sheet
+    # Format C: single col under infrastructure
+    pos_col         = find_col(("pos", "on-line"), ("infrastructure", "pos", "number - outstanding"))
+    pos_offline_col = find_col(("pos", "off-line"),)   # Format A only; None in Format C
+
+    # Format B/C only
+    micro_atm = find_col(("micro atms",),)
+    bharat_qr = find_col(("bharat qr",),)
+    upi_qr    = find_col(("upi qr",),)
+
+    # CC transaction volume columns
+    # Format A: "credit cards" + "pos" + "transactions (actuals)"
+    # Format C: "credit card" + "card payments" + "at pos" + "volume"
+    cc_pos_vol = find_col(
+        ("credit card", "card payments", "at pos", "volume"),
+        ("credit cards", "pos", "transactions (actuals)"),
+        ("credit cards", "pos", "no. of transactions"),
+    )
+    cc_online_vol   = find_col(("credit card", "online", "volume"),)
+    cc_others_vol   = find_col(("credit card", "card payments", "others", "volume"),)
+    # Format A: CC ATM txn = cash-like (ATM usage of CC)
+    cc_atm_cash_vol = find_col(
+        ("credit card", "cash withdrawal", "volume"),
+        ("credit cards", "atm", "transactions (actuals)"),
+        ("credit cards", "atm", "no. of transactions"),
+    )
+
+    # DC transaction volume columns
+    dc_pos_vol = find_col(
+        ("debit card", "card payments", "at pos", "volume"),
+        ("debit cards", "pos", "transactions (actuals)"),
+        ("debit cards", "pos", "no. of transactions"),
+    )
+    dc_online_vol   = find_col(("debit card", "online", "volume"),)
+    dc_others_vol   = find_col(("debit card", "card payments", "others", "volume"),)
+    dc_atm_cash_vol = find_col(
+        ("debit card", "cash withdrawal", "atm", "volume"),
+        ("debit cards", "atm", "transactions (actuals)"),
+        ("debit cards", "atm", "no. of transactions"),
+    )
+
     return ColumnMap(
         bank_col=bank_col,
         credit_outstanding_col=credit_col,
         debit_outstanding_col=debit_col,
         header_end_row=header_end_row,
+        atm_onsite_col=atm_onsite,
+        atm_offsite_col=atm_offsite,
+        pos_col=pos_col,
+        pos_offline_col=pos_offline_col,
+        micro_atm_col=micro_atm,
+        bharat_qr_col=bharat_qr,
+        upi_qr_col=upi_qr,
+        cc_pos_vol_col=cc_pos_vol,
+        cc_online_vol_col=cc_online_vol,
+        cc_others_vol_col=cc_others_vol,
+        cc_atm_cash_vol_col=cc_atm_cash_vol,
+        dc_pos_vol_col=dc_pos_vol,
+        dc_online_vol_col=dc_online_vol,
+        dc_others_vol_col=dc_others_vol,
+        dc_atm_cash_vol_col=dc_atm_cash_vol,
     )
 
 
@@ -472,14 +578,44 @@ def extract_sheet(ws: Worksheet, verbose: bool = False) -> pd.DataFrame:
         if cr_val is None and db_val is None:
             continue
 
+        def _get(col_idx):
+            if col_idx is None:
+                return None
+            return _to_number(row[col_idx - 1]) if len(row) >= col_idx else None
+
+        # PoS: Format A has online+offline; sum them. Format C has single col.
+        pos_online  = _get(cols.pos_col)
+        pos_offline = _get(cols.pos_offline_col)
+        if pos_online is not None and pos_offline is not None:
+            pos_total = pos_online + pos_offline
+        else:
+            pos_total = pos_online  # Format C or None
+
         records.append({
-            "date": date,
-            "sheet": ws.title,
-            "bank_raw": name,
-            "bank": canonical_bank(name),
-            "bank_category": current_category,
+            "date":               date,
+            "sheet":              ws.title,
+            "bank_raw":           name,
+            "bank":               canonical_bank(name),
+            "bank_category":      current_category,
             "credit_outstanding": cr_val,
-            "debit_outstanding": db_val,
+            "debit_outstanding":  db_val,
+            # Infrastructure
+            "atm_onsite":         _get(cols.atm_onsite_col),
+            "atm_offsite":        _get(cols.atm_offsite_col),
+            "pos_terminals":      pos_total,
+            "micro_atm":          _get(cols.micro_atm_col),
+            "bharat_qr":          _get(cols.bharat_qr_col),
+            "upi_qr":             _get(cols.upi_qr_col),
+            # CC transaction volumes
+            "cc_pos_vol":         _get(cols.cc_pos_vol_col),
+            "cc_online_vol":      _get(cols.cc_online_vol_col),
+            "cc_others_vol":      _get(cols.cc_others_vol_col),
+            "cc_atm_cash_vol":    _get(cols.cc_atm_cash_vol_col),
+            # DC transaction volumes
+            "dc_pos_vol":         _get(cols.dc_pos_vol_col),
+            "dc_online_vol":      _get(cols.dc_online_vol_col),
+            "dc_others_vol":      _get(cols.dc_others_vol_col),
+            "dc_atm_cash_vol":    _get(cols.dc_atm_cash_vol_col),
         })
 
     return pd.DataFrame.from_records(records)
@@ -706,13 +842,21 @@ def run_bankwise_ingestion(settings=None, verbose: bool = False) -> pd.DataFrame
     low_banks = set(coverage[coverage < 12].index)
     combined["low_coverage"] = combined["bank_name"].isin(low_banks)
 
-    # Split into CC and DC parquets
-    cc_cols = ["date", "bank_name", "bank_name_raw", "bank_category",
-               "credit_outstanding", "source", "low_coverage"]
-    dc_cols = ["date", "bank_name", "bank_name_raw", "bank_category",
-               "debit_outstanding", "source", "low_coverage"]
+    # Split into CC and DC parquets — include extra columns where available
+    _infra = ["atm_onsite", "atm_offsite", "pos_terminals",
+              "micro_atm", "bharat_qr", "upi_qr"]
+    _base  = ["date", "bank_name", "bank_name_raw", "bank_category", "source", "low_coverage"]
 
-    # Rename outstanding columns to match bank_data_prep expectations
+    _cc_extra = ["cc_pos_vol", "cc_online_vol", "cc_others_vol", "cc_atm_cash_vol"]
+    _dc_extra = ["dc_pos_vol", "dc_online_vol", "dc_others_vol", "dc_atm_cash_vol"]
+
+    # Only keep extra cols that actually exist (older-format files produce all-NaN cols)
+    def _keep(cols_list):
+        return [c for c in cols_list if c in combined.columns and combined[c].notna().any()]
+
+    cc_cols = _base + ["credit_outstanding"] + _keep(_infra) + _keep(_cc_extra)
+    dc_cols = _base + ["debit_outstanding"]  + _keep(_infra) + _keep(_dc_extra)
+
     cc = combined[cc_cols].rename(columns={"credit_outstanding": "cc_outstanding"})
     dc = combined[dc_cols].rename(columns={"debit_outstanding": "dc_outstanding"})
 

@@ -11,7 +11,6 @@ Usage:
     log.add("Training rows", 158)
     log.add("CV MAPE mean", "3.46%")
     log.add_section("Regressors", ["repo_rate (lag=9)"])
-    log.add_warning("Jun-2025 data anomaly not resolved")
     log.save()
 """
 
