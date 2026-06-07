@@ -148,9 +148,11 @@ BANK_MERGER_EVENTS: dict[tuple[str, str], dict] = {
 # ── Per-bank Prophet config overrides ─────────────────────────────────────
 # Merger banks need higher changepoint_prior_scale to capture the step.
 # Stable banks can use lower values for smoother fits.
+# Banks with "growth":"logistic" + "cap" use saturating growth to prevent
+# over-forecasting when the recent growth rate is slowing (2025-2026 normalisation).
 BANK_PROPHET_OVERRIDES: dict[str, dict] = {
     # Merger banks: more flexible trend
-    "Bank of Baroda":       {"changepoint_prior_scale": 0.15},
+    "Bank of Baroda":       {"changepoint_prior_scale": 0.15, "growth": "logistic"},
     "Canara Bank":          {"changepoint_prior_scale": 0.15},
     "Union Bank of India":  {"changepoint_prior_scale": 0.15},
     "Punjab National Bank": {"changepoint_prior_scale": 0.15},
@@ -162,6 +164,42 @@ BANK_PROPHET_OVERRIDES: dict[str, dict] = {
     "ICICI Bank":           {"changepoint_prior_scale": 0.03},
     "Axis Bank":            {"changepoint_prior_scale": 0.03},
     "IndusInd Bank":        {"changepoint_prior_scale": 0.03},
+    # Hypergrowth banks: logistic growth cap to prevent runaway extrapolation
+    "Kotak Mahindra Bank":  {"changepoint_prior_scale": 0.05, "growth": "logistic"},
+}
+
+# ── Logistic growth caps (per bank, card type) ──────────────────────────
+# Cap = maximum plausible outstanding count. Set to ~1.3x the last observed
+# value for banks whose growth is normalising. Prophet's logistic trend
+# ensures the forecast asymptotes toward this cap rather than extrapolating
+# linearly forever.
+# floor is set to 0 for all banks (outstanding can't be negative).
+BANK_GROWTH_CAPS: dict[tuple[str, str], float] = {
+    # CC banks with over-forecasting (OOS error > 30%)
+    ("Kotak Mahindra Bank", "cc"): 6.5e6,     # last actual ~4.7M, cap at ~1.4x
+    ("Bank of Baroda",      "cc"): 4.2e6,     # last actual ~3.2M, cap at ~1.3x
+    ("IndusInd Bank",       "cc"): 4.0e6,     # last actual ~3.0M, cap at ~1.3x
+    ("HSBC",                "cc"): 1.1e6,     # last actual ~0.96M, cap at ~1.15x
+    # DC banks with over-forecasting
+    ("Kotak Mahindra Bank", "dc"): 45e6,      # last actual ~37M, cap at ~1.2x
+    ("Bank of Baroda",      "dc"): 100e6,     # last actual ~88M, cap at ~1.15x
+}
+
+# ── ETS banks (use Holt-Winters instead of Prophet) ──────────────────────
+# ETS outperforms Prophet on clean, stable-growth series by 0.5-3.3pp in CV.
+# These banks have no merger events, no structural breaks in their stable window,
+# and exhibit smooth additive trend + seasonality.
+ETS_BANKS: dict[tuple[str, str], bool] = {
+    # CC stable banks where ETS won in model comparison
+    ("Axis Bank",      "cc"): True,   # ETS 5.97% vs Prophet 9.03%
+    ("ICICI Bank",     "cc"): True,   # ETS 2.46% vs Prophet 3.57%
+    ("IndusInd Bank",  "cc"): True,   # ETS 4.36% vs Prophet 4.85%
+    # DC stable banks where ETS won in model comparison
+    ("HDFC Bank",      "dc"): True,   # ETS 1.16% vs Prophet 2.45%
+    ("Axis Bank",      "dc"): True,   # ETS 3.05% vs Prophet 4.05%
+    ("ICICI Bank",     "dc"): True,   # ETS 5.28% vs Prophet 6.17%
+    ("UCO Bank",       "dc"): True,   # ETS 2.64% vs Prophet 3.43%
+    ("Indian Overseas Bank", "dc"): True,  # ETS 5.70% vs Prophet 8.97%
 }
 
 

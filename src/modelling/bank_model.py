@@ -81,16 +81,27 @@ def _fit_bank_model(
     changepoints: list[str],
     prophet_config: dict,
     bank_name: str,
+    card_type: str = "cc",
 ) -> object:
-    """Fit Prophet model for one bank. Returns fitted model.
+    """Fit Prophet (or ETS) model for one bank. Returns fitted model.
 
     Handles:
+      - ETS dispatch for stable-growth banks (from ETS_BANKS config)
+      - Logistic growth with cap for over-forecasting banks (from BANK_GROWTH_CAPS)
       - Per-bank Prophet config overrides (from BANK_PROPHET_OVERRIDES)
       - Merger step dummy columns (added by bank_data_prep, registered as regressors)
       - Shared structural changepoints (filtered to training window)
     """
+    from src.modelling.bank_config import (
+        BANK_PROPHET_OVERRIDES, ETS_BANKS, BANK_GROWTH_CAPS, USE_LOG_TRANSFORM,
+    )
+
+    # ── ETS path ──────────────────────────────────────────────────────────
+    if ETS_BANKS.get((bank_name, card_type), False):
+        return _fit_ets_model(bank_df, bank_name, card_type)
+
+    # ── Prophet path ──────────────────────────────────────────────────────
     from prophet import Prophet
-    from src.modelling.bank_config import BANK_PROPHET_OVERRIDES
 
     # Filter changepoints to those within the training window
     valid_cps = [
@@ -106,6 +117,21 @@ def _fit_bank_model(
     if valid_cps:
         cfg["changepoints"] = valid_cps
 
+    # Logistic growth: add cap and floor columns
+    cap_key = (bank_name, card_type)
+    if cfg.get("growth") == "logistic" and cap_key in BANK_GROWTH_CAPS:
+        cap_val = BANK_GROWTH_CAPS[cap_key]
+        if USE_LOG_TRANSFORM:
+            cap_val = np.log1p(cap_val)
+        bank_df = bank_df.copy()
+        bank_df["cap"]   = cap_val
+        bank_df["floor"] = 0.0
+        logger.debug(f"    Logistic growth: cap={cap_val:.2f}")
+    elif cfg.get("growth") == "logistic":
+        # No cap defined — fall back to linear to avoid Prophet error
+        cfg["growth"] = "linear"
+        logger.debug(f"    No cap defined for {bank_name}/{card_type}, falling back to linear")
+
     m = Prophet(**cfg)
 
     # Register merger dummy columns as regressors
@@ -116,6 +142,79 @@ def _fit_bank_model(
 
     m.fit(bank_df)
     return m
+
+
+def _fit_ets_model(bank_df: pd.DataFrame, bank_name: str, card_type: str) -> object:
+    """Fit Holt-Winters ETS model. Returns a wrapper with Prophet-like interface."""
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    from src.modelling.bank_config import USE_LOG_TRANSFORM
+
+    y = bank_df["y"].values
+    n = len(y)
+
+    model = ExponentialSmoothing(
+        y,
+        trend="add",
+        seasonal="add",
+        seasonal_periods=12,
+        initialization_method="heuristic",
+    )
+    fit = model.fit(optimized=True)
+    logger.info(f"    ETS (Holt-Winters) fitted: {n} months, AIC={fit.aic:.0f}")
+
+    # Return a wrapper that implements the same interface as Prophet
+    return _ETSWrapper(fit, bank_df, bank_name, card_type)
+
+
+class _ETSWrapper:
+    """Thin wrapper around statsmodels ETS fit to mimic Prophet's interface.
+
+    Implements:
+      - make_future_dataframe(periods, freq)
+      - predict(future) -> DataFrame with ds, yhat, yhat_lower, yhat_upper, trend
+    """
+
+    def __init__(self, fit, bank_df, bank_name, card_type):
+        self._fit = fit
+        self._bank_df = bank_df
+        self._bank_name = bank_name
+        self._card_type = card_type
+        self._n_train = len(bank_df)
+
+    def make_future_dataframe(self, periods, freq="MS"):
+        last_date = self._bank_df["ds"].max()
+        hist_dates = self._bank_df["ds"].tolist()
+        future_dates = pd.date_range(last_date, periods=periods + 1, freq=freq)[1:]
+        all_dates = hist_dates + future_dates.tolist()
+        return pd.DataFrame({"ds": all_dates})
+
+    def predict(self, future):
+        n_hist = self._n_train
+        n_future = len(future) - n_hist
+
+        # Fitted values for history
+        fitted = self._fit.fittedvalues
+
+        # Forecast
+        if n_future > 0:
+            fc = self._fit.forecast(n_future)
+            yhat = np.concatenate([fitted, fc])
+        else:
+            yhat = fitted[:len(future)]
+
+        # Simple CI: ±10% for near-term, widening to ±20% at 24 months
+        spread = np.linspace(0.05, 0.20, len(future))
+        yhat_lower = yhat * (1 - spread)
+        yhat_upper = yhat * (1 + spread)
+
+        result = pd.DataFrame({
+            "ds": future["ds"].values[:len(yhat)],
+            "yhat": yhat[:len(future)],
+            "yhat_lower": yhat_lower[:len(future)],
+            "yhat_upper": yhat_upper[:len(future)],
+            "trend": yhat[:len(future)],  # ETS doesn't decompose the same way
+        })
+        return result
 
 
 def _run_bank_cv(
@@ -208,12 +307,23 @@ def _forecast_bank(
       - Merger dummy columns in the future DataFrame
       - Terminated bank clipping at exit date
     """
-    from src.modelling.bank_config import TERMINATED_BANKS, USE_LOG_TRANSFORM
+    from src.modelling.bank_config import (
+        TERMINATED_BANKS, USE_LOG_TRANSFORM, BANK_GROWTH_CAPS, ETS_BANKS,
+    )
 
     future = model.make_future_dataframe(
         periods=BANK_FORECAST_PERIODS,
         freq=BANK_FORECAST_FREQ,
     )
+
+    # Logistic growth: add cap/floor to future dataframe
+    cap_key = (bank_name, card_type)
+    if cap_key in BANK_GROWTH_CAPS and not ETS_BANKS.get(cap_key, False):
+        cap_val = BANK_GROWTH_CAPS[cap_key]
+        if USE_LOG_TRANSFORM:
+            cap_val = np.log1p(cap_val)
+        future["cap"]   = cap_val
+        future["floor"] = 0.0
 
     # Carry forward merger dummy columns into future rows
     merger_cols = [c for c in bank_df.columns if c.startswith("merger_")]
@@ -532,12 +642,18 @@ def run_bank_model(
         logger.info(f"\n  [{card_type.upper()}] {bank_name} ({len(df)} months)")
 
         model = _fit_bank_model(
-            df, changepoints, BANK_PROPHET_CONFIG, bank_name
+            df, changepoints, BANK_PROPHET_CONFIG, bank_name, card_type
         )
 
-        if run_cv and len(df) >= 72:  # CV needs enough data — skip if <72m
+        is_ets = isinstance(model, _ETSWrapper)
+        if run_cv and not is_ets and len(df) >= 72:
             cv_result = _run_bank_cv(model, bank_name, card_type)
             cv_results.append(cv_result)
+        elif run_cv and is_ets:
+            logger.info(
+                f"  [{card_type.upper()}] {bank_name}: CV skipped (ETS model — "
+                f"CV was validated in model_comparison.py)"
+            )
         elif run_cv:
             logger.info(
                 f"  [{card_type.upper()}] {bank_name}: CV skipped "
