@@ -104,11 +104,23 @@ def build_data() -> dict:
             except Exception as e:
                 print(f"  Warning: could not load {f.name}: {e}")
 
-    # Collect forecast months from groundup files (for month selector)
+    # Collect forecast months for the month selector (Jul 2026 → Jul 2027)
+    MONTH_START = "2026-07-01"
+    MONTH_END   = "2027-07-01"
     try:
+        # Aggregate forecast months (CC as reference)
+        fc_cc = pd.read_csv(PROCESSED / "forecast_cc.csv")
+        fc_cc["date"] = pd.to_datetime(fc_cc["date"]).dt.strftime("%Y-%m-%d")
+        agg_months = sorted(fc_cc["date"].tolist())
+
+        # Bank-level forecast months
         gu_cc = pd.read_parquet(PROCESSED / "groundup" / "groundup_cc.parquet")
         gu_cc["date"] = pd.to_datetime(gu_cc["date"]).dt.strftime("%Y-%m-%d")
-        data["forecast_months"] = sorted(gu_cc["date"].tolist())
+        bank_months = sorted(gu_cc["date"].tolist())
+
+        # Union of both, filtered to Jul 2026 - Jul 2027
+        all_months = sorted(set(agg_months + bank_months))
+        data["forecast_months"] = [m for m in all_months if MONTH_START <= m <= MONTH_END]
     except Exception:
         data["forecast_months"] = []
 
@@ -119,8 +131,24 @@ def build_data() -> dict:
             cv_df = pd.read_csv(cv_path)
             data[f"{card_type}_bank_cv"] = cv_df.where(cv_df.notna(), None).to_dict(orient="list")
 
+    # Load aggregate forecast CSVs for month-selector table
+    for key, stem, unit in [
+        ("fc_cc",      "forecast_cc",      "lakh"),
+        ("fc_dc",      "forecast_dc",      "lakh"),
+        ("fc_cc_vol",  "forecast_cc_vol",  "lakh_txn"),
+        ("fc_dc_vol",  "forecast_dc_vol",  "lakh_txn"),
+        ("fc_upi_vol", "forecast_upi_vol", "mn_txn"),
+    ]:
+        try:
+            fc = pd.read_csv(PROCESSED / f"{stem}.csv")
+            fc["date"] = pd.to_datetime(fc["date"]).dt.strftime("%Y-%m-%d")
+            data[key] = _nan_to_none(fc.to_dict(orient="list"))
+        except Exception as e:
+            print(f"  Warning: could not load {stem}.csv: {e}")
+
     print(f"  CC banks loaded: {len(data['all_cc_banks'])}")
     print(f"  DC banks loaded: {len(data['all_dc_banks'])}")
+    print(f"  Forecast months: {len(data['forecast_months'])} ({data['forecast_months'][0] if data['forecast_months'] else 'none'} -> {data['forecast_months'][-1] if data['forecast_months'] else 'none'})")
 
     return data
 

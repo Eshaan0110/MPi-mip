@@ -39,7 +39,7 @@ CV_CONFIG = {
 
 # ── Forecast settings ──────────────────────────────────────────────────────
 FORECAST_CONFIG = {
-    "periods": 12,          # 12-month forward forecast (Rahul spec)
+    "periods": 24,          # 24-month forward forecast (Jun 2025 -> May 2027)
     "freq":    "MS",        # month-start frequency
 }
 
