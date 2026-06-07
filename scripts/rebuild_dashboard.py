@@ -61,14 +61,15 @@ def build_data() -> dict:
         "top5_dc_banks": {},
         "all_cc_banks": {},
         "all_dc_banks": {},
+        # CV MAPE on original scale (corrected Jun 2026 — previously log-scale, now proper)
         "cv_mape": {
             "cc_outstanding": 3.46,
             "dc_outstanding": 7.08,
             "cc_vol": 13.63,
             "dc_vol": "N/A",
             "upi_vol": 12.31,
-            "cc_bank_median": 12.75,
-            "dc_bank_median": 9.84,
+            "cc_bank_median": 7.93,
+            "dc_bank_median": 7.44,
         },
     }
 
@@ -102,6 +103,14 @@ def build_data() -> dict:
                 data[key][bank_name] = _nan_to_none(df.to_dict(orient="list"))
             except Exception as e:
                 print(f"  Warning: could not load {f.name}: {e}")
+
+    # Collect forecast months from groundup files (for month selector)
+    try:
+        gu_cc = pd.read_parquet(PROCESSED / "groundup" / "groundup_cc.parquet")
+        gu_cc["date"] = pd.to_datetime(gu_cc["date"]).dt.strftime("%Y-%m-%d")
+        data["forecast_months"] = sorted(gu_cc["date"].tolist())
+    except Exception:
+        data["forecast_months"] = []
 
     # Load CV summaries for bank MAPE display
     for card_type in ["cc", "dc"]:
