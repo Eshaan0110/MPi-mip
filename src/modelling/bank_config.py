@@ -210,7 +210,7 @@ RESIDUAL_PROPHET_CONFIG = {
 
 
 # ── Forecast + CV settings ───────────────────────────────────────────────
-BANK_FORECAST_PERIODS = 12
+BANK_FORECAST_PERIODS = 24   # 24 months: Jun 2025 → May 2027
 BANK_FORECAST_FREQ    = "MS"
 
 BANK_CV_CONFIG = {
