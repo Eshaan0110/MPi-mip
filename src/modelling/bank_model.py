@@ -577,7 +577,8 @@ def run_bank_model(
         log.add("Card type", card_type.upper())
         log.add("Top banks modelled", len(top_banks))
         gu_latest = groundup[groundup["date"] == groundup["date"].max()]
-        log.add("Ground-up forecast (Feb 2027)", f"{gu_latest['forecast'].sum():,.0f} cards")
+        fc_end = groundup["date"].max()
+        log.add(f"Ground-up forecast ({fc_end:%b %Y})", f"{gu_latest['forecast'].sum():,.0f} cards")
         log.add("90% CI", f"[{gu_latest['forecast_lower'].sum():,.0f}, {gu_latest['forecast_upper'].sum():,.0f}]")
         if coverage_pct is not None:
             log.add("Coverage vs PSI", f"{coverage_pct:.1f}%")
