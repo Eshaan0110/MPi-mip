@@ -299,9 +299,21 @@ def build_future_df(
     future_with_events = build_event_columns(future_with_events, model_key)
     future = future_with_events.rename(columns={"date": "ds"})
 
-    # Pulse events = 0 in forecast (shocks don't repeat by assumption)
+    # Pulse events = 0 in forecast (shocks don't repeat), step events persist at 1
+    from src.modelling.model_config import STRUCTURAL_EVENTS
+    pulse_events = {
+        f"event_{name}" for name, spec in STRUCTURAL_EVENTS.items()
+        if spec["type"] == "dummy_pulse"
+    }
+    step_events = {
+        f"event_{name}" for name, spec in STRUCTURAL_EVENTS.items()
+        if spec["type"] == "dummy_step"
+    }
     for col in [c for c in future.columns if c.startswith("event_")]:
-        future.loc[future["ds"] > last_date, col] = 0.0
+        if col in pulse_events:
+            future.loc[future["ds"] > last_date, col] = 0.0
+        elif col in step_events:
+            future.loc[future["ds"] > last_date, col] = 1.0
 
     # Project each regressor forward
     regressors: list[RegressorSpec] = config["regressors"]
@@ -346,10 +358,10 @@ def build_future_df(
             proj_val = last_val
             logger.info(f"Forward proj {final_col}: trend extrapolation, slope={slope:.2f}/month")
 
-        # Fill forecast months
+        # Fill forecast months (clip at zero to prevent negative regressor values)
         mask = future["ds"] > last_date
         for i, idx in enumerate(future[mask].index, start=1):
-            future.loc[idx, final_col] = proj_val + slope * i
+            future.loc[idx, final_col] = max(0.0, proj_val + slope * i)
 
     logger.info(
         f"Future DF: {len(future)} rows ({len(train_df)} hist + {periods} forecast) | "

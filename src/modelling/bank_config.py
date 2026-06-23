@@ -169,20 +169,41 @@ BANK_PROPHET_OVERRIDES: dict[str, dict] = {
 }
 
 # ── Logistic growth caps (per bank, card type) ──────────────────────────
-# Cap = maximum plausible outstanding count. Set to ~1.3x the last observed
-# value for banks whose growth is normalising. Prophet's logistic trend
-# ensures the forecast asymptotes toward this cap rather than extrapolating
-# linearly forever.
+# Banks that need logistic growth caps to prevent over-forecasting.
+# Caps are computed dynamically: max(last * 1.3, last + trailing_12m_growth * 24)
 # floor is set to 0 for all banks (outstanding can't be negative).
+BANKS_NEEDING_CAPS: set[tuple[str, str]] = {
+    ("Kotak Mahindra Bank", "cc"),
+    ("Bank of Baroda",      "cc"),
+    ("IndusInd Bank",       "cc"),
+    ("HSBC",                "cc"),
+    ("Kotak Mahindra Bank", "dc"),
+    ("Bank of Baroda",      "dc"),
+}
+
+
+def compute_dynamic_cap(bank_df: "pd.DataFrame", bank_name: str, card_type: str) -> float | None:
+    """Compute cap dynamically from recent data. Returns None if bank doesn't need a cap."""
+    import pandas as pd
+    if (bank_name, card_type) not in BANKS_NEEDING_CAPS:
+        return None
+    y = bank_df["y"].values
+    last = y[-1]
+    if len(y) >= 12:
+        trailing_growth = y[-1] - y[-13]
+    else:
+        trailing_growth = y[-1] - y[0]
+    return max(last * 1.3, last + trailing_growth * 24)
+
+
+# Legacy lookup for backwards compatibility
 BANK_GROWTH_CAPS: dict[tuple[str, str], float] = {
-    # CC banks with over-forecasting (OOS error > 30%)
-    ("Kotak Mahindra Bank", "cc"): 6.5e6,     # last actual ~4.7M, cap at ~1.4x
-    ("Bank of Baroda",      "cc"): 4.2e6,     # last actual ~3.2M, cap at ~1.3x
-    ("IndusInd Bank",       "cc"): 4.0e6,     # last actual ~3.0M, cap at ~1.3x
-    ("HSBC",                "cc"): 1.1e6,     # last actual ~0.96M, cap at ~1.15x
-    # DC banks with over-forecasting
-    ("Kotak Mahindra Bank", "dc"): 45e6,      # last actual ~37M, cap at ~1.2x
-    ("Bank of Baroda",      "dc"): 100e6,     # last actual ~88M, cap at ~1.15x
+    ("Kotak Mahindra Bank", "cc"): 6.5e6,
+    ("Bank of Baroda",      "cc"): 4.2e6,
+    ("IndusInd Bank",       "cc"): 4.0e6,
+    ("HSBC",                "cc"): 1.1e6,
+    ("Kotak Mahindra Bank", "dc"): 45e6,
+    ("Bank of Baroda",      "dc"): 100e6,
 }
 
 # ── ETS banks (use Holt-Winters instead of Prophet) ──────────────────────
@@ -242,7 +263,7 @@ RESIDUAL_PROPHET_CONFIG = {
     "daily_seasonality":       False,
     "seasonality_mode":        "additive",
     "interval_width":          0.90,
-    "changepoint_prior_scale": 0.01,
+    "changepoint_prior_scale": 0.05,
     "seasonality_prior_scale": 5.0,
 }
 

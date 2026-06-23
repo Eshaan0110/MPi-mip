@@ -192,27 +192,41 @@ class _ETSWrapper:
         n_hist = self._n_train
         n_future = len(future) - n_hist
 
-        # Fitted values for history
         fitted = self._fit.fittedvalues
 
-        # Forecast
         if n_future > 0:
             fc = self._fit.forecast(n_future)
             yhat = np.concatenate([fitted, fc])
+
+            # Simulation-based prediction intervals (1000 paths)
+            try:
+                sim = self._fit.simulate(
+                    nsimulations=n_future,
+                    repetitions=1000,
+                    anchor="end",
+                )
+                lower = np.percentile(sim, 5, axis=1)
+                upper = np.percentile(sim, 95, axis=1)
+                yhat_lower = np.concatenate([fitted * 0.95, lower])
+                yhat_upper = np.concatenate([fitted * 1.05, upper])
+            except Exception:
+                resid_std = np.std(self._fit.resid)
+                steps = np.arange(1, n_future + 1)
+                widths = 1.645 * resid_std * np.sqrt(steps)
+                yhat_lower = np.concatenate([fitted - 1.645 * resid_std, fc - widths])
+                yhat_upper = np.concatenate([fitted + 1.645 * resid_std, fc + widths])
         else:
             yhat = fitted[:len(future)]
-
-        # Simple CI: ±10% for near-term, widening to ±20% at 24 months
-        spread = np.linspace(0.05, 0.20, len(future))
-        yhat_lower = yhat * (1 - spread)
-        yhat_upper = yhat * (1 + spread)
+            resid_std = np.std(self._fit.resid)
+            yhat_lower = yhat - 1.645 * resid_std
+            yhat_upper = yhat + 1.645 * resid_std
 
         result = pd.DataFrame({
             "ds": future["ds"].values[:len(yhat)],
             "yhat": yhat[:len(future)],
             "yhat_lower": yhat_lower[:len(future)],
             "yhat_upper": yhat_upper[:len(future)],
-            "trend": yhat[:len(future)],  # ETS doesn't decompose the same way
+            "trend": yhat[:len(future)],
         })
         return result
 
@@ -293,6 +307,74 @@ def _run_bank_cv(
         }
 
 
+def _run_ets_cv(
+    bank_df: pd.DataFrame,
+    bank_name: str,
+    card_type: str,
+) -> dict:
+    """Walk-forward CV for ETS models (statsmodels has no built-in CV)."""
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    from src.modelling.bank_config import USE_LOG_TRANSFORM
+
+    initial_months = 36
+    horizon_months = 6
+    step_months = 6
+
+    y_all = bank_df["y"].values
+    n = len(y_all)
+    if n < initial_months + horizon_months:
+        logger.warning(f"  [{card_type.upper()}] {bank_name}: ETS CV skipped (too short)")
+        return {"bank_name": bank_name, "card_type": card_type, "mape_mean": None, "mape_median": None}
+
+    mapes = []
+    start = initial_months
+    while start + horizon_months <= n:
+        y_train = y_all[:start]
+        y_test = y_all[start:start + horizon_months]
+
+        try:
+            model = ExponentialSmoothing(
+                y_train, trend="add", seasonal="add", seasonal_periods=12,
+                initialization_method="heuristic",
+            )
+            fit = model.fit(optimized=True)
+            fc = fit.forecast(horizon_months)
+
+            if USE_LOG_TRANSFORM:
+                actual = np.expm1(y_test)
+                pred = np.expm1(fc)
+            else:
+                actual = y_test
+                pred = fc
+
+            fold_mape = np.mean(np.abs((actual - pred) / actual))
+            mapes.append(min(fold_mape, 1.0))
+        except Exception:
+            pass
+
+        start += step_months
+
+    if not mapes:
+        return {"bank_name": bank_name, "card_type": card_type, "mape_mean": None, "mape_median": None}
+
+    mapes = np.array(mapes) * 100
+    logger.info(
+        f"  [{card_type.upper()}] {bank_name} (ETS CV): "
+        f"median {np.median(mapes):.2f}% (mean {np.mean(mapes):.2f}%) "
+        f"[{mapes.min():.2f}%-{mapes.max():.2f}%] ({len(mapes)} folds)"
+    )
+    return {
+        "bank_name": bank_name,
+        "card_type": card_type,
+        "mape_mean": float(np.mean(mapes)),
+        "mape_median": float(np.median(mapes)),
+        "mape_min": float(mapes.min()),
+        "mape_max": float(mapes.max()),
+        "cv_windows": len(mapes),
+        "n_capped": int((mapes >= 100).sum()),
+    }
+
+
 def _forecast_bank(
     model,
     bank_df: pd.DataFrame,
@@ -309,6 +391,7 @@ def _forecast_bank(
     """
     from src.modelling.bank_config import (
         TERMINATED_BANKS, USE_LOG_TRANSFORM, BANK_GROWTH_CAPS, ETS_BANKS,
+        compute_dynamic_cap,
     )
 
     future = model.make_future_dataframe(
@@ -316,10 +399,12 @@ def _forecast_bank(
         freq=BANK_FORECAST_FREQ,
     )
 
-    # Logistic growth: add cap/floor to future dataframe
+    # Logistic growth: add cap/floor to future dataframe (dynamic caps preferred)
     cap_key = (bank_name, card_type)
-    if cap_key in BANK_GROWTH_CAPS and not ETS_BANKS.get(cap_key, False):
-        cap_val = BANK_GROWTH_CAPS[cap_key]
+    dynamic_cap = compute_dynamic_cap(bank_df, bank_name, card_type)
+    static_cap = BANK_GROWTH_CAPS.get(cap_key)
+    if (dynamic_cap or static_cap) and not ETS_BANKS.get(cap_key, False):
+        cap_val = dynamic_cap or static_cap
         if USE_LOG_TRANSFORM:
             cap_val = np.log1p(cap_val)
         future["cap"]   = cap_val
@@ -650,10 +735,8 @@ def run_bank_model(
             cv_result = _run_bank_cv(model, bank_name, card_type)
             cv_results.append(cv_result)
         elif run_cv and is_ets:
-            logger.info(
-                f"  [{card_type.upper()}] {bank_name}: CV skipped (ETS model — "
-                f"CV was validated in model_comparison.py)"
-            )
+            cv_result = _run_ets_cv(df, bank_name, card_type)
+            cv_results.append(cv_result)
         elif run_cv:
             logger.info(
                 f"  [{card_type.upper()}] {bank_name}: CV skipped "

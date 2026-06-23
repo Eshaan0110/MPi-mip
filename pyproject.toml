@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=17.0",
     "pydantic>=2.9",
     "statsmodels>=0.14.6",
+    "supabase>=2.10",
     "xlrd>=2.0",
 ]
 # Removed (Jun 2026 cleanup):
