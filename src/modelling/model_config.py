@@ -179,10 +179,12 @@ DC_CONFIG = {
         RegressorSpec(
             col="debit_card_vol_lakh",
             standardize=True,
-            lag=0,
+            lag=4,
             fill_method="linear",
             mode="additive",
-            notes="DC transaction volume. Falling usage informs outstanding trajectory.",
+            notes="DC transaction volume — fundamental business driver. Round 4 "
+                  "lag sweep found lag=4 optimal (5.74% MAPE vs 7.64% at lag=0). "
+                  "4-month transmission delay reflects reporting/settlement lag.",
         ),
         # NOTE: UPI total volume as a regressor shows wrong sign (+) because the
         # Jan 2022 changepoint is already capturing the UPI displacement effect.
@@ -248,6 +250,7 @@ DC_VOL_CONFIG = {
         "seasonality_mode": "additive",
         "changepoint_prior_scale": 0.1,
         "seasonality_prior_scale": 10.0,
+        "n_changepoints": 10,
     },
     # No UPI regressor -- UPI volume is so dominant that including it as a
     # linear regressor drives the forecast to zero. The UPI displacement
