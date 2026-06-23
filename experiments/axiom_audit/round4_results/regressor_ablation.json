@@ -1,0 +1,43 @@
+{
+  "CC": {
+    "baseline_mape": 3.465,
+    "without_repo_rate_lag9": {
+      "mape": 3.799,
+      "delta_pp": 0.334,
+      "verdict": "KEEP"
+    },
+    "without_event_covid_shock": {
+      "mape": 3.448,
+      "delta_pp": -0.016,
+      "verdict": "MARGINAL"
+    },
+    "without_event_rbi_credit_tightening": {
+      "mape": 3.567,
+      "delta_pp": 0.102,
+      "verdict": "KEEP"
+    }
+  },
+  "DC": {
+    "baseline_mape": 7.637,
+    "without_debit_card_vol_lakh": {
+      "mape": 6.336,
+      "delta_pp": -1.301,
+      "verdict": "REMOVE"
+    },
+    "without_debit_card_pos_vol_lakh": {
+      "mape": 7.636,
+      "delta_pp": -0.001,
+      "verdict": "MARGINAL"
+    },
+    "without_event_covid_shock": {
+      "mape": 7.634,
+      "delta_pp": -0.003,
+      "verdict": "MARGINAL"
+    },
+    "without_event_card_validity_7yr": {
+      "mape": 7.642,
+      "delta_pp": 0.005,
+      "verdict": "MARGINAL"
+    }
+  }
+}

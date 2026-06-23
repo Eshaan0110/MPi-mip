@@ -1,0 +1,74 @@
+{
+  "CC": {
+    "aggregate_file": "D:\\MPi-mip\\data\\processed\\forecast_cc_full.csv",
+    "aggregate_rows": 182,
+    "bank_files_found": [
+      "D:\\MPi-mip\\data\\processed\\bankwise_cards_cc.csv"
+    ],
+    "combined_file": "not found",
+    "available_csvs": [
+      "bankwise_cards_cc.csv",
+      "bankwise_cards_dc.csv",
+      "cc_ablation_input.csv",
+      "cpi.csv",
+      "forecast_cc.csv",
+      "forecast_cc_coefficients.csv",
+      "forecast_cc_cv_metrics.csv",
+      "forecast_cc_full.csv",
+      "forecast_cc_vol.csv",
+      "forecast_cc_vol_cv_metrics.csv",
+      "forecast_cc_vol_full.csv",
+      "forecast_dc.csv",
+      "forecast_dc_coefficients.csv",
+      "forecast_dc_cv_metrics.csv",
+      "forecast_dc_full.csv",
+      "forecast_dc_vol.csv",
+      "forecast_dc_vol_cv_metrics.csv",
+      "forecast_dc_vol_full.csv",
+      "forecast_upi_vol.csv",
+      "forecast_upi_vol_cv_metrics.csv",
+      "forecast_upi_vol_full.csv",
+      "master_training.csv",
+      "npci_upi.csv",
+      "rbi_psi_cards.csv",
+      "repo_rate.csv",
+      "upi_p2p_p2m.csv"
+    ]
+  },
+  "DC": {
+    "aggregate_file": "D:\\MPi-mip\\data\\processed\\forecast_dc_full.csv",
+    "aggregate_rows": 263,
+    "bank_files_found": [
+      "D:\\MPi-mip\\data\\processed\\bankwise_cards_dc.csv"
+    ],
+    "combined_file": "not found",
+    "available_csvs": [
+      "bankwise_cards_cc.csv",
+      "bankwise_cards_dc.csv",
+      "cc_ablation_input.csv",
+      "cpi.csv",
+      "forecast_cc.csv",
+      "forecast_cc_coefficients.csv",
+      "forecast_cc_cv_metrics.csv",
+      "forecast_cc_full.csv",
+      "forecast_cc_vol.csv",
+      "forecast_cc_vol_cv_metrics.csv",
+      "forecast_cc_vol_full.csv",
+      "forecast_dc.csv",
+      "forecast_dc_coefficients.csv",
+      "forecast_dc_cv_metrics.csv",
+      "forecast_dc_full.csv",
+      "forecast_dc_vol.csv",
+      "forecast_dc_vol_cv_metrics.csv",
+      "forecast_dc_vol_full.csv",
+      "forecast_upi_vol.csv",
+      "forecast_upi_vol_cv_metrics.csv",
+      "forecast_upi_vol_full.csv",
+      "master_training.csv",
+      "npci_upi.csv",
+      "rbi_psi_cards.csv",
+      "repo_rate.csv",
+      "upi_p2p_p2m.csv"
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "CC": {
+    "best_arima_ets_split": "0.60/0.40",
+    "best_2way_mape": 1.636,
+    "recommended_3way": {
+      "prophet": 0.35,
+      "arima": 0.39,
+      "ets": 0.26
+    },
+    "grid_top5": {
+      "arima_0.60_ets_0.40": 1.636,
+      "arima_0.55_ets_0.45": 1.637,
+      "arima_0.65_ets_0.35": 1.637,
+      "arima_0.50_ets_0.50": 1.639,
+      "arima_0.70_ets_0.30": 1.639
+    }
+  },
+  "DC": {
+    "best_arima_ets_split": "1.00/0.00",
+    "best_2way_mape": 2.088,
+    "recommended_3way": {
+      "prophet": 0.35,
+      "arima": 0.65,
+      "ets": 0.0
+    },
+    "grid_top5": {
+      "arima_1.00_ets_0.00": 2.088,
+      "arima_0.95_ets_0.05": 2.091,
+      "arima_0.90_ets_0.10": 2.095,
+      "arima_0.85_ets_0.15": 2.101,
+      "arima_0.80_ets_0.20": 2.107
+    }
+  }
+}

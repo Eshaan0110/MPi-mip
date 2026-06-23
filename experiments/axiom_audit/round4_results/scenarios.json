@@ -1,0 +1,56 @@
+{
+  "CC": {
+    "base_6.25pct": {
+      "repo_rate": 6.25,
+      "forecast_month_6": 1230.7,
+      "forecast_month_12": 1290.0,
+      "forecast_month_24": 1393.2,
+      "impact_vs_base_12m_pct": 0.0
+    },
+    "hawkish_7.25pct": {
+      "repo_rate": 7.25,
+      "forecast_month_6": 1248.8,
+      "forecast_month_12": 1308.2,
+      "forecast_month_24": 1411.4,
+      "impact_vs_base_12m_pct": 1.41
+    },
+    "dovish_5.25pct": {
+      "repo_rate": 5.25,
+      "forecast_month_6": 1212.5,
+      "forecast_month_12": 1271.9,
+      "forecast_month_24": 1375.1,
+      "impact_vs_base_12m_pct": -1.4
+    },
+    "extreme_hawk_8.00pct": {
+      "repo_rate": 8.0,
+      "forecast_month_6": 1262.4,
+      "forecast_month_12": 1321.8,
+      "forecast_month_24": 1425.0,
+      "impact_vs_base_12m_pct": 2.47
+    }
+  },
+  "DC": {
+    "base": {
+      "forecast_month_12": 10551.9,
+      "forecast_month_24": 10648.4
+    },
+    "upi_acceleration_moderate": {
+      "assumption": "DC volumes drop 20% faster than trend due to UPI displacement",
+      "forecast_month_12": 10235.4,
+      "forecast_month_24": 10329.0,
+      "impact_vs_base_12m_pct": -3.0
+    },
+    "upi_acceleration_severe": {
+      "assumption": "DC POS usage halves by 2028, aggressive UPI merchant adoption",
+      "forecast_month_12": 9918.8,
+      "forecast_month_24": 10009.5,
+      "impact_vs_base_12m_pct": -6.0
+    },
+    "rural_banking_recovery": {
+      "assumption": "PMJDY Phase 3 + rural PoS expansion stabilizes DC growth",
+      "forecast_month_12": 10763.0,
+      "forecast_month_24": 10861.4,
+      "impact_vs_base_12m_pct": 2.0
+    }
+  }
+}

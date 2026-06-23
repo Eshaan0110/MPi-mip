@@ -1,0 +1,18 @@
+{
+  "CC": {
+    "prophet_cv_mape": 3.465,
+    "arima_111_cv_mape": 1.669,
+    "ets_aad_cv_mape": 1.715,
+    "n_arima_folds": 18,
+    "n_ets_folds": 18,
+    "prophet_best": "False"
+  },
+  "DC": {
+    "prophet_cv_mape": 7.637,
+    "arima_111_cv_mape": 2.088,
+    "ets_aad_cv_mape": 2.257,
+    "n_arima_folds": 31,
+    "n_ets_folds": 31,
+    "prophet_best": "False"
+  }
+}

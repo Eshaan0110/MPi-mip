@@ -1,0 +1,109 @@
+name: MIP Monthly Pipeline
+
+on:
+  schedule:
+    # 15th of every month at 06:00 UTC (11:30 AM IST)
+    - cron: '0 6 15 * *'
+  workflow_dispatch:
+    inputs:
+      skip_scraping:
+        description: 'Skip scraping (use existing data)'
+        required: false
+        default: 'false'
+      skip_training:
+        description: 'Skip model training'
+        required: false
+        default: 'false'
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: inputs.skip_scraping != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - run: uv run playwright install chromium --with-deps
+      - name: Run scrapers
+        run: uv run python -m src.scraper --all
+      - name: Upload raw data
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-data
+          path: data/raw/
+          retention-days: 30
+
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [scrape]
+    if: always() && (needs.scrape.result == 'success' || inputs.skip_scraping == 'true') && inputs.skip_training != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - name: Download scraped data
+        if: inputs.skip_scraping != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-data
+          path: data/raw/
+      - name: Run ingestion + training
+        run: uv run python run_pipeline.py
+      - name: Upload processed data
+        uses: actions/upload-artifact@v4
+        with:
+          name: processed-data
+          path: data/processed/
+          retention-days: 30
+
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [train]
+    if: always() && needs.train.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - name: Download processed data
+        uses: actions/download-artifact@v4
+        with:
+          name: processed-data
+          path: data/processed/
+      - name: Sync to Supabase
+        run: uv run python scripts/sync_to_supabase.py
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [scrape, train, sync]
+    if: always()
+    steps:
+      - name: Report status
+        run: |
+          echo "## Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Scrape | ${{ needs.scrape.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Train | ${{ needs.train.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sync | ${{ needs.sync.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Triggered: ${{ github.event_name }} at $(date -u)" >> $GITHUB_STEP_SUMMARY
+      - name: Fail if any step failed
+        if: contains(needs.*.result, 'failure')
+        run: exit 1

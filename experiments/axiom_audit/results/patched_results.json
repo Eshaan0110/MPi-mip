@@ -1,0 +1,56 @@
+{
+  "aggregate": {
+    "cc": {
+      "training_rows": 158,
+      "cv_mape_mean": 3.46,
+      "cv_mape_range": [
+        2.48,
+        5.27
+      ]
+    },
+    "dc": {
+      "training_rows": 239,
+      "cv_mape_mean": 7.64,
+      "cv_mape_range": [
+        2.88,
+        13.96
+      ]
+    }
+  },
+  "banks": {
+    "cc": {
+      "bank_cv_median": 13.4,
+      "bank_cv_range": [
+        4.84,
+        21.87
+      ],
+      "n_banks": 5
+    },
+    "cc_coverage": 84.90574923791004,
+    "dc": {
+      "bank_cv_median": 7.56,
+      "bank_cv_range": [
+        4.26,
+        21.39
+      ],
+      "n_banks": 6
+    },
+    "dc_coverage": 81.8353328027289
+  },
+  "fixes_applied": [
+    "F01",
+    "F04",
+    "F05",
+    "F07",
+    "F11"
+  ],
+  "fixes_not_applied_here": {
+    "F02": "ETS CV \u2014 run fix_f02_ets_cv.py separately",
+    "F03": "Scale verification \u2014 manual audit",
+    "F06": "Dynamic caps \u2014 run fix_f06_dynamic_caps.py separately",
+    "F08": "Accuracy tiering \u2014 UI change",
+    "F09": "Paytm reclass \u2014 config change",
+    "F10": "OOS holdout \u2014 run fix_f10_oos_holdout.py separately",
+    "F12": "Drift reconciliation \u2014 depends on F05 results"
+  }
+}

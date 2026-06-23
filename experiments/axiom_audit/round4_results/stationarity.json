@@ -1,0 +1,20 @@
+{
+  "CC": {
+    "level_adf_stat": 2.1775,
+    "level_adf_p": 0.9989,
+    "level_kpss_stat": 0.4225,
+    "level_kpss_p": 0.01,
+    "diff_adf_stat": -3.7823,
+    "diff_adf_p": 0.0031,
+    "interpretation": "non-stationary in levels; stationary after differencing"
+  },
+  "DC": {
+    "level_adf_stat": -0.7422,
+    "level_adf_p": 0.8355,
+    "level_kpss_stat": 0.3046,
+    "level_kpss_p": 0.01,
+    "diff_adf_stat": -5.6626,
+    "diff_adf_p": 0.0,
+    "interpretation": "non-stationary in levels; stationary after differencing"
+  }
+}

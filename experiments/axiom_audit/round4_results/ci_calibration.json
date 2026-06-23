@@ -1,0 +1,36 @@
+{
+  "CC": {
+    "nominal": 90.0,
+    "month_1_2": {
+      "empirical_pct": 47.2,
+      "n": 36
+    },
+    "month_3_4": {
+      "empirical_pct": 47.2,
+      "n": 36
+    },
+    "month_5_6": {
+      "empirical_pct": 41.7,
+      "n": 36
+    },
+    "overall": 45.4,
+    "interpretation": "over-confident"
+  },
+  "DC": {
+    "nominal": 90.0,
+    "month_1_2": {
+      "empirical_pct": 54.8,
+      "n": 62
+    },
+    "month_3_4": {
+      "empirical_pct": 54.8,
+      "n": 62
+    },
+    "month_5_6": {
+      "empirical_pct": 48.4,
+      "n": 62
+    },
+    "overall": 52.7,
+    "interpretation": "over-confident"
+  }
+}

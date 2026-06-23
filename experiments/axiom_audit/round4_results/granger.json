@@ -1,0 +1,16 @@
+{
+  "cc_repo_rate": {
+    "lag_1_p": 0.1507,
+    "lag_2_p": 0.281,
+    "lag_3_p": 0.4057,
+    "lag_4_p": 0.5545,
+    "significant_at_005": false
+  },
+  "dc_vol": {
+    "lag_1_p": 0.0001,
+    "lag_2_p": 0.0,
+    "lag_3_p": 0.0,
+    "lag_4_p": 0.0,
+    "significant_at_005": true
+  }
+}

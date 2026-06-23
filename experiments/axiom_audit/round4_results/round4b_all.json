@@ -1,0 +1,185 @@
+{
+  "alt_models": {
+    "CC": {
+      "prophet_cv_mape": 3.465,
+      "arima_111_cv_mape": 1.669,
+      "ets_aad_cv_mape": 1.715,
+      "n_arima_folds": 18,
+      "n_ets_folds": 18,
+      "prophet_best": "False"
+    },
+    "DC": {
+      "prophet_cv_mape": 7.637,
+      "arima_111_cv_mape": 2.088,
+      "ets_aad_cv_mape": 2.257,
+      "n_arima_folds": 31,
+      "n_ets_folds": 31,
+      "prophet_best": "False"
+    }
+  },
+  "bank_reconciliation": {
+    "CC": {
+      "error": "Missing files: agg=True, bank=False"
+    },
+    "DC": {
+      "error": "Missing files: agg=True, bank=False"
+    }
+  },
+  "data_leakage": {
+    "CC": {
+      "n_rows": 158,
+      "date_range": "2013-01-01 to 2026-02-01",
+      "regressor_cols": [
+        "debit_cards_outstanding_lakh",
+        "credit_card_vol_lakh",
+        "debit_card_vol_lakh",
+        "credit_card_pos_vol_lakh",
+        "debit_card_pos_vol_lakh",
+        "pos_terminals_lakh",
+        "upi_qr_lakh",
+        "bharat_qr_lakh",
+        "upi_volume_mn",
+        "upi_value_cr",
+        "upi_p2m_vol_mn",
+        "upi_p2p_vol_mn",
+        "repo_rate",
+        "cpi_index",
+        "cpi_inflation_pct",
+        "repo_rate_lag9"
+      ],
+      "event_cols": [
+        "event_covid_shock",
+        "event_rbi_credit_tightening"
+      ],
+      "issues": [
+        "credit_card_pos_vol_lakh: 82 NaN values",
+        "debit_card_pos_vol_lakh: 82 NaN values",
+        "pos_terminals_lakh: 82 NaN values",
+        "upi_qr_lakh: 92 NaN values",
+        "bharat_qr_lakh: 82 NaN values",
+        "upi_volume_mn: 39 NaN values",
+        "upi_value_cr: 39 NaN values",
+        "upi_p2m_vol_mn: 90 NaN values",
+        "upi_p2p_vol_mn: 90 NaN values",
+        "cpi_index: 2 NaN values",
+        "cpi_inflation_pct: 14 NaN values"
+      ],
+      "clean": false
+    },
+    "DC": {
+      "n_rows": 239,
+      "date_range": "2006-04-01 to 2026-02-01",
+      "regressor_cols": [
+        "credit_cards_outstanding_lakh",
+        "credit_card_vol_lakh",
+        "debit_card_vol_lakh",
+        "credit_card_pos_vol_lakh",
+        "debit_card_pos_vol_lakh",
+        "pos_terminals_lakh",
+        "upi_qr_lakh",
+        "bharat_qr_lakh",
+        "upi_volume_mn",
+        "upi_value_cr",
+        "upi_p2m_vol_mn",
+        "upi_p2p_vol_mn",
+        "repo_rate",
+        "cpi_index",
+        "cpi_inflation_pct"
+      ],
+      "event_cols": [
+        "event_covid_shock",
+        "event_card_validity_7yr"
+      ],
+      "issues": [
+        "credit_card_pos_vol_lakh: 163 NaN values",
+        "pos_terminals_lakh: 163 NaN values",
+        "upi_qr_lakh: 173 NaN values",
+        "bharat_qr_lakh: 163 NaN values",
+        "upi_volume_mn: 120 NaN values",
+        "upi_value_cr: 120 NaN values",
+        "upi_p2m_vol_mn: 171 NaN values",
+        "upi_p2p_vol_mn: 171 NaN values",
+        "repo_rate: 9 NaN values",
+        "cpi_index: 59 NaN values",
+        "cpi_inflation_pct: 83 NaN values"
+      ],
+      "clean": false
+    }
+  },
+  "dc_vol_lag_sensitivity": {
+    "lag_0": 7.637,
+    "lag_1": 6.766,
+    "lag_2": 6.189,
+    "lag_3": 5.817,
+    "lag_4": 5.739,
+    "lag_5": 6.261,
+    "lag_6": 5.8,
+    "without_vol": 6.336
+  },
+  "horizon_drift": {
+    "CC": {
+      "by_month": {
+        "month_1": {
+          "mape": 3.06,
+          "n": 18
+        },
+        "month_2": {
+          "mape": 3.12,
+          "n": 18
+        },
+        "month_3": {
+          "mape": 3.35,
+          "n": 18
+        },
+        "month_4": {
+          "mape": 3.72,
+          "n": 18
+        },
+        "month_5": {
+          "mape": 3.65,
+          "n": 18
+        },
+        "month_6": {
+          "mape": 3.8,
+          "n": 18
+        }
+      },
+      "mape_month_1_3": 3.18,
+      "mape_month_4_6": 3.72,
+      "drift_pp": 0.55,
+      "drift_acceptable": "True"
+    },
+    "DC": {
+      "by_month": {
+        "month_1": {
+          "mape": 3.87,
+          "n": 31
+        },
+        "month_2": {
+          "mape": 7.29,
+          "n": 31
+        },
+        "month_3": {
+          "mape": 7.66,
+          "n": 31
+        },
+        "month_4": {
+          "mape": 7.95,
+          "n": 31
+        },
+        "month_5": {
+          "mape": 8.6,
+          "n": 31
+        },
+        "month_6": {
+          "mape": 8.97,
+          "n": 31
+        }
+      },
+      "mape_month_1_3": 6.27,
+      "mape_month_4_6": 8.51,
+      "drift_pp": 2.23,
+      "drift_acceptable": "True"
+    }
+  }
+}

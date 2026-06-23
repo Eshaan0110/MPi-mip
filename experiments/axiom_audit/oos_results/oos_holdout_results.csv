@@ -1,0 +1,3 @@
+model,oos_mape,oos_max_ape,ci_coverage_pct,n_months,train_end,oos_end
+CC Outstanding,1.58,2.41,83.3,6,2024-12-01,2025-06-01
+DC Outstanding,1.02,2.06,100.0,6,2024-12-01,2025-06-01
