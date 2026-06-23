@@ -35,8 +35,8 @@ DRY_RUN = "--dry-run" in sys.argv
 
 
 def get_client():
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    url = os.environ.get("SUPABASE_URL", "https://nwevrclikkiuemttovih.supabase.co")
+    key = os.environ.get("SUPABASE_SERVICE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53ZXZyY2xpa2tpdWVtdHRvdmloIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjA1Njc1MSwiZXhwIjoyMDk3NjMyNzUxfQ.YmEpjJsXPilnZ_WA2w74G91oGknziXJTMrizvMsta2o")
     if not url or not key:
         logger.error("Set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables")
         sys.exit(1)
