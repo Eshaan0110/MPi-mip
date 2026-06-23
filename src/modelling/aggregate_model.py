@@ -27,6 +27,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from loguru import logger
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 from src.modelling.model_config import (
     CC_CONFIG,
@@ -213,29 +215,163 @@ def log_model_coefficients(model, config: dict) -> pd.DataFrame:
 
 # ── Forecast ───────────────────────────────────────────────────────────────
 
+def _fit_arima_forecast(y: np.ndarray, horizon: int) -> np.ndarray | None:
+    """Fit ARIMA(1,1,1) and return h-step forecast, or None on failure."""
+    try:
+        m = ARIMA(y, order=(1, 1, 1))
+        fit = m.fit()
+        return fit.forecast(steps=horizon)
+    except Exception as e:
+        logger.warning(f"  ARIMA forecast failed: {e}")
+        return None
+
+
+def _fit_ets_forecast(y: np.ndarray, horizon: int) -> np.ndarray | None:
+    """Fit damped additive ETS and return h-step forecast, or None on failure."""
+    try:
+        m = ExponentialSmoothing(y, trend="add", seasonal="add",
+                                  seasonal_periods=12, damped_trend=True)
+        fit = m.fit(optimized=True)
+        return fit.forecast(steps=horizon)
+    except Exception as e:
+        logger.warning(f"  ETS forecast failed: {e}")
+        return None
+
+
+def _build_conformal_intervals(
+    train_df: pd.DataFrame, config: dict, horizon: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build 90% prediction intervals from CV residual quantiles (conformal).
+
+    Runs walk-forward CV with same settings as main CV, collects residuals
+    by horizon step, and returns the 5th/95th percentile widths.
+    """
+    from prophet.diagnostics import cross_validation
+
+    initial_days = int(CV_CONFIG["initial"].replace(" days", ""))
+    initial_months = initial_days // 30
+
+    y = train_df["y"].values
+    dates = train_df["ds"].values
+    step_months = int(CV_CONFIG["period"].replace(" days", "")) // 30
+    h_months = int(CV_CONFIG["horizon"].replace(" days", "")) // 30
+
+    # Collect residuals per horizon step using ARIMA (fast) for conformal bands
+    residuals_by_step = {h: [] for h in range(horizon)}
+    for start in range(initial_months, len(y) - h_months + 1, step_months):
+        train_y = y[:start]
+        test_y = y[start:start + h_months]
+        try:
+            m = ARIMA(train_y, order=(1, 1, 1))
+            fit = m.fit()
+            pred = fit.forecast(steps=h_months)
+            for h in range(min(h_months, horizon)):
+                residuals_by_step[h].append(test_y[h] - pred[h])
+        except Exception:
+            continue
+
+    lower_widths = np.zeros(horizon)
+    upper_widths = np.zeros(horizon)
+    for h in range(horizon):
+        resids = residuals_by_step.get(h, [])
+        if len(resids) >= 3:
+            lower_widths[h] = np.percentile(resids, 5)
+            upper_widths[h] = np.percentile(resids, 95)
+        else:
+            # Fallback: expanding uncertainty
+            std = np.std(y[-24:]) if len(y) >= 24 else np.std(y)
+            lower_widths[h] = -1.645 * std * np.sqrt(h + 1)
+            upper_widths[h] = 1.645 * std * np.sqrt(h + 1)
+
+    return lower_widths, upper_widths
+
+
+# Ensemble weights optimized via CV grid search (Round 4C audit).
+# CC optimal: ARIMA 60% / ETS 40% in 2-way; with Prophet floor at 35%
+#   -> Prophet 0.35, ARIMA 0.39, ETS 0.26
+# DC optimal: ARIMA 100% / ETS 0% in 2-way; with Prophet floor
+#   -> Prophet 0.35, ARIMA 0.65, ETS 0.00
+# Per-series weights reflect that DC's ETS adds no value (ARIMA dominates),
+# while CC benefits from ETS diversification.
+ENSEMBLE_WEIGHTS = {
+    "cc": {"prophet": 0.35, "arima": 0.39, "ets": 0.26},
+    "dc": {"prophet": 0.35, "arima": 0.65, "ets": 0.00},
+}
+
+
 def run_forecast(
     model,
     config: dict,
     train_df: pd.DataFrame,
     master: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Generate 12-month forward forecast with 90% confidence intervals."""
+    """Generate 12-month ensemble forecast with conformal prediction intervals.
+
+    Combines Prophet (with regressors/events) + ARIMA(1,1,1) + damped ETS.
+    CIs are conformal: built from actual CV residual quantiles, not model
+    assumptions about residual independence.
+    """
+    horizon = FORECAST_CONFIG.get("periods", 24)
+    y = train_df["y"].values
+
+    # --- Prophet forecast ---
     future_df = build_future_df(train_df, config, master)
-    forecast  = model.predict(future_df)
-
-    # Extract forecast-only rows
+    prophet_forecast = model.predict(future_df)
     last_hist = train_df["ds"].max()
-    fc = forecast[forecast["ds"] > last_hist][[
-        "ds", "yhat", "yhat_lower", "yhat_upper",
-        "trend", "yearly",
-    ]].copy()
+    prophet_fc = prophet_forecast[prophet_forecast["ds"] > last_hist].copy()
+    prophet_yhat = prophet_fc["yhat"].values[:horizon]
+    prophet_dates = prophet_fc["ds"].values[:horizon]
 
-    fc.columns = [
-        "date", "forecast_lakh", "forecast_lower_lakh", "forecast_upper_lakh",
-        "trend_component", "seasonality_component",
-    ]
+    # --- ARIMA forecast ---
+    arima_yhat = _fit_arima_forecast(y, horizon)
 
-    logger.info(f"  12-month forecast ({config['name']}):")
+    # --- ETS forecast ---
+    ets_yhat = _fit_ets_forecast(y, horizon)
+
+    # --- Ensemble ---
+    forecasts = {}
+    if prophet_yhat is not None and len(prophet_yhat) == horizon:
+        forecasts["prophet"] = prophet_yhat
+    if arima_yhat is not None and len(arima_yhat) == horizon:
+        forecasts["arima"] = arima_yhat
+    if ets_yhat is not None and len(ets_yhat) == horizon:
+        forecasts["ets"] = ets_yhat
+
+    if not forecasts:
+        raise RuntimeError("All forecast models failed")
+
+    # Use per-series optimized weights
+    model_key = "cc" if "credit" in config["name"] else "dc"
+    weights = ENSEMBLE_WEIGHTS[model_key]
+    total_w = sum(weights[k] for k in forecasts if weights.get(k, 0) > 0)
+    ensemble = np.zeros(horizon)
+    for name, fc_arr in forecasts.items():
+        w = weights.get(name, 0) / total_w if total_w > 0 else 1.0 / len(forecasts)
+        ensemble += w * fc_arr
+        logger.info(f"  Ensemble member {name}: weight={w:.2f}, mean={np.mean(fc_arr):.1f}")
+
+    logger.info(f"  Ensemble forecast mean: {np.mean(ensemble):.1f}")
+
+    # --- Conformal CIs ---
+    lower_widths, upper_widths = _build_conformal_intervals(train_df, config, horizon)
+    ci_lower = ensemble + lower_widths  # lower_widths are negative
+    ci_upper = ensemble + upper_widths
+
+    # --- Build output DataFrame ---
+    fc = pd.DataFrame({
+        "date": prophet_dates[:horizon],
+        "forecast_lakh": ensemble,
+        "forecast_lower_lakh": ci_lower,
+        "forecast_upper_lakh": ci_upper,
+        "trend_component": prophet_fc["trend"].values[:horizon],
+        "seasonality_component": prophet_fc["yearly"].values[:horizon],
+    })
+
+    # Also store individual model forecasts for transparency
+    for name, fc_arr in forecasts.items():
+        fc[f"forecast_{name}_lakh"] = fc_arr
+
+    logger.info(f"  12-month ensemble forecast ({config['name']}):")
     for _, row in fc.iterrows():
         logger.info(
             f"    {row['date']:%b %Y}: {row['forecast_lakh']:.1f} lakh "
@@ -247,15 +383,55 @@ def run_forecast(
     fc.to_parquet(_PROCESSED / f"{stem}.parquet", index=False)
     fc.to_csv(_PROCESSED / f"{stem}.csv", index=False)
 
-    # Also save full historical + forecast for dashboard
-    full = forecast[["ds", "yhat", "yhat_lower", "yhat_upper", "trend"]].copy()
+    # Full historical + forecast for dashboard
+    full = prophet_forecast[["ds", "yhat", "yhat_lower", "yhat_upper", "trend"]].copy()
     full.columns = ["date", "yhat_lakh", "yhat_lower_lakh", "yhat_upper_lakh", "trend_lakh"]
+    # Overwrite forecast portion with ensemble values
+    fc_mask = full["date"] > last_hist
+    full.loc[fc_mask, "yhat_lakh"] = ensemble
+    full.loc[fc_mask, "yhat_lower_lakh"] = ci_lower
+    full.loc[fc_mask, "yhat_upper_lakh"] = ci_upper
     full["actual_lakh"] = train_df.set_index("ds")["y"].reindex(full["date"]).values
     full.to_parquet(_PROCESSED / f"{stem}_full.parquet", index=False)
     full.to_csv(_PROCESSED / f"{stem}_full.csv", index=False)
 
     logger.info(f"  Forecast saved to {stem}.parquet, {stem}.csv, {stem}_full.*")
     return fc
+
+
+# ── Scenario analysis ────────────────────────────────────────────────────
+
+CC_SCENARIOS = {
+    "base":          {"repo_rate": 6.25, "label": "Current rate (6.25%)"},
+    "hawkish_100bp": {"repo_rate": 7.25, "label": "RBI hikes 100bp (inflation spike)"},
+    "dovish_100bp":  {"repo_rate": 5.25, "label": "RBI cuts 100bp (growth support)"},
+    "extreme_hawk":  {"repo_rate": 8.00, "label": "Emergency tightening (8.00%)"},
+}
+
+
+def run_scenario_analysis(model, config: dict, train_df: pd.DataFrame, master: pd.DataFrame) -> pd.DataFrame:
+    """Run CC forecast under different repo rate scenarios."""
+    if "credit" not in config["name"]:
+        return pd.DataFrame()
+
+    results = []
+    for name, scenario in CC_SCENARIOS.items():
+        future_df = build_future_df(train_df, config, master)
+        last_hist = train_df["ds"].max()
+        mask = future_df["ds"] > last_hist
+        if "repo_rate_lag9" in future_df.columns:
+            future_df.loc[mask, "repo_rate_lag9"] = scenario["repo_rate"]
+
+        fc = model.predict(future_df)
+        fc_only = fc[fc["ds"] > last_hist][["ds", "yhat"]].copy()
+        fc_only["scenario"] = name
+        fc_only["repo_rate"] = scenario["repo_rate"]
+        results.append(fc_only)
+
+    scenario_df = pd.concat(results, ignore_index=True)
+    scenario_df.to_csv(_PROCESSED / "cc_scenarios.csv", index=False)
+    logger.info(f"  Scenario analysis saved ({len(CC_SCENARIOS)} scenarios)")
+    return scenario_df
 
 
 # ── COVID stress-test diagnostic ──────────────────────────────────────────
@@ -375,6 +551,13 @@ def run_aggregate_model(
     # COVID stress-test for CC
     if run_cc and run_cv and "cc" in results:
         _covid_stress_test(results["cc"]["model"], CC_CONFIG)
+
+    # Scenario analysis for CC
+    if run_cc and "cc" in results:
+        run_scenario_analysis(
+            results["cc"]["model"], CC_CONFIG,
+            results["cc"]["train_df"], master,
+        )
 
     # Auto-log
     try:
