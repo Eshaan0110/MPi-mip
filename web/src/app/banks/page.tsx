@@ -57,8 +57,8 @@ export default function BankExplorerPage() {
         setForecasts(data);
         const uniqueMonths = [...new Set(data.map((d) => d.forecast_month))].sort();
         setMonths(uniqueMonths);
-        if (uniqueMonths.length > 1) setSelectedMonth(uniqueMonths[1]);
-        else if (uniqueMonths.length > 0) setSelectedMonth(uniqueMonths[0]);
+        // Default to latest month (most useful for production use)
+        if (uniqueMonths.length > 0) setSelectedMonth(uniqueMonths[uniqueMonths.length - 1]);
         const ccBanks = [...new Set(data.filter((d) => d.card_type === "CC").map((d) => d.bank_name))].filter((b) => ALLOWED_CC_BANKS.has(b)).sort();
         if (ccBanks.length > 0) setSelectedBanks([ccBanks[0]]);
       }

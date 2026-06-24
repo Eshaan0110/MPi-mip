@@ -18,7 +18,7 @@ export function NavBar() {
     <nav className="bg-brand-700 text-white">
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-8">
         <span className="font-bold text-lg tracking-wide">MIP</span>
-        <div className="flex gap-6 text-sm">
+        <div className="flex gap-6 text-sm overflow-x-auto">
           {links.map((l) => {
             const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
             return (
