@@ -1,12 +1,18 @@
 # MPi Market Intelligence Platform (MIP)
 
-Internal forecasting platform for India's credit and debit card market.
+Automated forecasting platform for India's credit card, debit card, and digital payments market. Scrapes RBI/NPCI data monthly, runs ensemble ML models, and serves 24-month forecasts through a live web dashboard.
 
-Forecasts cards outstanding per bank (top 10 CC, top 15 DC), aggregate India totals, and transaction volumes (CC/DC/UPI) with a self-contained interactive dashboard.
+**Live dashboard:** https://web-mocha-kappa-71.vercel.app
 
 ## Quick Start
 
-Requires **Python 3.12+** and **[uv](https://astral.sh/uv)**.
+### Prerequisites
+
+- **Python 3.12+**
+- **[uv](https://docs.astral.sh/uv/)** (Python package manager)
+- **Node.js 18+** (for the web dashboard)
+
+### 1. Clone & install Python dependencies
 
 ```bash
 git clone https://github.com/Eshaan0110/MPi-mip.git
@@ -14,159 +20,238 @@ cd MPi-mip
 uv sync
 ```
 
-### Run everything (first time)
+### 2. Run the forecasting pipeline
 
 ```bash
+# Full run with cross-validation (~20 min)
 uv run python run_pipeline.py
-```
 
-This runs all 5 steps in sequence (~5 min with CV, ~30 sec without):
-1. Aggregate CC/DC outstanding models
-2. Bank-level ground-up models (10 CC + 15 DC banks)
-3. Transaction volume models (CC/DC/UPI)
-4. UPI displacement analysis
-5. Dashboard rebuild
+# Skip CV for faster run (~2 min)
+uv run python run_pipeline.py --no-cv
 
-Then open **`dashboard.html`** in any browser. No server needed.
-
-### Run faster (data already fresh)
-
-```bash
+# Skip ingestion if data is already fresh
 uv run python run_pipeline.py --skip-ingestion --no-cv
 ```
 
-### Ingest new data (when RBI publishes a new month)
+This runs 5 steps in sequence:
+1. **Ingestion** — parse raw RBI/NPCI files into clean Parquet
+2. **Aggregate models** — CC/DC outstanding (Prophet + ARIMA + ETS ensemble)
+3. **Bank-level models** — ~80 individual bank models (Prophet or ETS)
+4. **Transaction volume models** — CC/DC/UPI volumes
+5. **Dashboard rebuild** — generate `dashboard.html`
 
-Place the new bankwise Excel in `data/raw/rbi_bankwise/`, then:
+### 3. View results locally
+
+Open `dashboard.html` in any browser — no server needed.
+
+### 4. (Optional) Run the web dashboard locally
 
 ```bash
-uv run python run_pipeline.py
+cd web
+npm install
+cp .env.local.example .env.local
+# Edit .env.local with your Supabase credentials
+npm run dev
 ```
 
-The pipeline auto-detects new files and re-runs everything.
+Open http://localhost:3000
 
-## Dashboard
+### 5. (Optional) Sync forecasts to Supabase
 
-Open `dashboard.html` in any browser. Features:
+```bash
+# Set environment variables (or they'll use defaults in the script)
+export SUPABASE_URL=https://nwevrclikkiuemttovih.supabase.co
+export SUPABASE_SERVICE_KEY=<your-service-key>
 
-- **Overview tab** — CC/DC outstanding, transaction volumes, UPI volume charts with forecasts
-- **Monthly Forecast table** — pick any month from Jul 2026 to Jul 2027, see all metrics for that month with 90% confidence intervals
-- **Bank-Level tab** — select any bank + any month, see forecast, CI, and growth vs last actual. Table shows all banks ranked by forecast for the selected month. Click any row to see the chart.
-- **CV MAPE table** — model accuracy summary
+uv run python scripts/sync_to_supabase.py
+# Preview without writing:
+uv run python scripts/sync_to_supabase.py --dry-run
+```
 
-## Accuracy (tested on March + April 2026 actuals)
+---
 
-### Credit Cards — Per Bank
+## Data Sources
 
-| Bank | Accuracy |
-|------|----------|
-| ICICI Bank | 98–99% |
-| Bank of Baroda | 97–99% |
-| Canara Bank | 97% |
-| Yes Bank | 93–95% |
-| Axis Bank | 93% |
-| HDFC Bank | 93% |
-| SBI | 88% |
-| Kotak Mahindra | 85–87% |
-| IndusInd | 81–83% |
-| **CC Median** | **83%** |
+| Source | What it provides | Frequency | Range |
+|--------|-----------------|-----------|-------|
+| **RBI Bankwise** | Per-bank CC/DC outstanding, ATMs, PoS, txn volumes | Monthly | Apr 2011 – present |
+| **RBI PSI** | India-total CC/DC outstanding, txn volumes | Monthly | Apr 2004 – present |
+| **NPCI UPI** | UPI transaction volumes and value | Monthly | Apr 2016 – present |
+| **RBI Repo Rate** | Policy interest rate | Monthly | Jan 2007 – present |
 
-### Debit Cards — Per Bank
+Raw data goes into `data/raw/`. Processed Parquet files go into `data/processed/`.
 
-| Bank | Accuracy |
-|------|----------|
-| Axis Bank | 97–99% |
-| ICICI Bank | 98–99% |
-| Indian Bank | 97–99% |
-| Kotak Mahindra | 97–98% |
-| HDFC Bank | 96% |
-| Bank of India | 92–99% |
-| Punjab National Bank | 92% |
-| Union Bank | 92% |
-| Canara Bank | 88–91% |
-| Bank of Baroda | 89–92% |
-| Central Bank | 90–91% |
-| UCO Bank | 89% |
-| Indian Overseas | 87–88% |
-| SBI | 85–87% |
-| Paytm | 81% |
-| **DC Median** | **92%** |
+---
 
-### Aggregate (India Total)
+## Models
 
-| Model | CV MAPE | Notes |
-|-------|---------|-------|
-| CC Outstanding | 3.46% | Prophet + Repo Rate lag-9 |
-| DC Outstanding | 7.08% | Prophet + DC txn volume regressor |
-| CC Bank median | 7.93% | Top 10 banks, original-scale |
-| DC Bank median | 7.44% | Top 15 banks, original-scale |
+### Aggregate — India Total (CC & DC Outstanding)
+
+**Architecture:** Weighted ensemble of Prophet + ARIMA(1,1,1) + Damped ETS
+
+| Series | Prophet | ARIMA | ETS | CV MAPE |
+|--------|---------|-------|-----|---------|
+| CC Outstanding | 35% | 39% | 26% | ~3.5% |
+| DC Outstanding | 35% | 65% | 0% | ~5.7% |
+
+**Regressors:**
+- CC: `repo_rate` at lag 9 months (RBI rate → bank risk appetite → card issuance)
+- DC: `debit_card_vol_lakh` at lag 4 months (transaction volume → issuance) + `debit_card_pos_vol_lakh` (UPI displacement signal)
+
+**Structural events coded:**
+- Demonetisation (Nov 2016) — changepoint
+- COVID lockdown (Apr–May 2020) — pulse dummy
+- PMJDY / Jan Dhan (Aug 2014) — changepoint, DC only
+- UPI inflection (Jan 2022) — changepoint, DC only
+- RBI credit tightening (Nov 2023) — step dummy, CC only
+
+**Confidence intervals:** Conformal prediction intervals from walk-forward CV residual quantiles (5th/95th percentile). Distribution-free — no normality assumption.
+
+### Bank-Level (~80 models)
+
+Each bank × card type gets its own model:
+- **Large/complex banks** → Prophet with logistic growth caps
+- **Small/stable banks** → Holt-Winters ETS
+
+Bank forecasts are summed and reconciled against the aggregate total (residual adjustment).
+
+**Median CV MAPE:** CC banks ~4–6%, DC banks ~6–9%
+
+### Transaction Volumes
+
+| Model | Regressors | Training Start | CV MAPE |
+|-------|-----------|----------------|---------|
+| CC Txn Volume | CC outstanding (multiplicative) | 2013 | ~13.6% |
+| DC Txn Volume | None (trend only) | 2022 | ~7% |
+| UPI Volume | None (trend only) | All data | ~12.3% |
+
+### Cross-Validation
+
+Walk-forward CV: 48-month initial window, 6-month horizon, 6-month step. Model is always tested on data it has never seen.
+
+---
 
 ## Project Structure
 
 ```
 MPi-mip/
-+-- config/settings.toml           # paths, column patterns, structural events
-+-- data/
-|   +-- raw/rbi_bankwise/          # RBI bankwise Excel files (2011-2025)
-|   +-- raw/                       # RBI PSI, NPCI UPI Excels
-|   +-- processed/                 # cleaned parquets + forecast CSVs
-+-- src/
-|   +-- ingestion/
-|   |   +-- rbi.py                 # RBI PSI parser (old + new format)
-|   |   +-- bankwise.py            # RBI bankwise parser (ATMs, PoS, txn vols)
-|   |   +-- npci.py                # NPCI UPI parser
-|   |   +-- cpi.py, repo_rate.py   # macro data parsers
-|   +-- modelling/
-|   |   +-- bank_config.py         # all bank lists, start dates, ETS/Prophet flags
-|   |   +-- bank_data_prep.py      # builds Prophet-ready DataFrames per bank
-|   |   +-- bank_model.py          # fits Prophet or ETS per bank, CV, forecast
-|   |   +-- aggregate_model.py     # India-level CC/DC outstanding model
-|   |   +-- txn_volume_model.py    # CC/DC/UPI transaction volume models
-|   |   +-- model_config.py        # aggregate model configs, structural events
-+-- scripts/
-|   +-- rebuild_dashboard.py       # regenerates dashboard data
-|   +-- bank_oos.py                # out-of-sample accuracy test
-|   +-- bankwise_eda_report.py     # per-bank EDA HTML report
-|   +-- method_comparison_fair.py  # fixed share vs trend vs ground-up comparison
-|   +-- model_comparison.py        # Prophet vs ETS comparison
-+-- reports/
-|   +-- bankwise_eda_report.docx   # per-bank regressor EDA (for Axiom)
-|   +-- bankwise_eda_report.html   # same, HTML version
-+-- run_pipeline.py                # one-command full pipeline runner
-+-- dashboard.html                 # self-contained interactive dashboard
-+-- PIPELINE_DESIGN.md             # Phase 3 production architecture spec
+├── data/
+│   ├── raw/                          # Raw RBI/NPCI files (Excel, JSON)
+│   │   ├── rbi_bankwise/             # Bank-level Excel files
+│   │   ├── rbi_psi/                  # Payment System Indicators
+│   │   └── npci_upi/                 # UPI monthly JSON
+│   └── processed/                    # Clean Parquet files + forecasts
+│       ├── forecast_cc.parquet       # Aggregate CC forecast
+│       ├── forecast_dc.parquet       # Aggregate DC forecast
+│       ├── bankwise_forecasts/       # Per-bank forecast Parquet files
+│       └── groundup/                 # Bank CV summaries
+│
+├── src/
+│   ├── ingestion/                    # Data parsers (RBI, NPCI, repo rate)
+│   ├── modelling/
+│   │   ├── model_config.py           # All model configs, events, regressors
+│   │   ├── aggregate_model.py        # Ensemble forecasting (Prophet+ARIMA+ETS)
+│   │   ├── bank_model.py             # Per-bank Prophet/ETS models
+│   │   ├── bank_config.py            # Bank lists, caps, ETS/Prophet flags
+│   │   ├── txn_volume_model.py       # CC/DC/UPI transaction volume models
+│   │   └── data_prep.py              # Feature engineering, lag application
+│   └── scraper/                      # Automated data scrapers
+│
+├── scripts/
+│   ├── sync_to_supabase.py           # Push forecasts to cloud database
+│   ├── rebuild_dashboard.py          # Generate dashboard.html data
+│   └── gen_accuracy_docx.py          # Bank accuracy report generator
+│
+├── web/                              # Next.js 14 web dashboard
+│   ├── src/app/                      # Pages (dashboard, banks, status, models, about)
+│   ├── src/components/               # Charts, KPI cards, nav
+│   └── src/lib/                      # Supabase client, types
+│
+├── experiments/axiom_audit/          # Diagnostic test suites & audit reports
+├── .github/workflows/                # CI/CD pipeline (monthly automation)
+├── supabase/migrations/              # Database schema (11 tables)
+│
+├── run_pipeline.py                   # One-command full pipeline runner
+├── dashboard.html                    # Self-contained offline dashboard
+└── pyproject.toml                    # Python dependencies
 ```
 
-## Models
+---
 
-### Bank-Level (Ground-Up)
+## Web Dashboard
 
-Each of the 25 banks (10 CC + 15 DC) has its own model, trained only on its **stable regime** — post-merger data only, no pre-merger history that would confuse the trend.
+**Live:** https://web-mocha-kappa-71.vercel.app
 
-- **Stable banks** (Axis, ICICI, IndusInd CC; HDFC, Axis, ICICI, UCO, Indian Overseas DC): **Holt-Winters ETS** — outperforms Prophet by 0.5–3.3pp on clean additive-trend series.
-- **Merger/hypergrowth banks** (BoB, Canara, Union, PNB, Kotak, Yes Bank): **Prophet** with per-bank `changepoint_prior_scale` tuning.
-- **Over-forecasting banks** (Kotak CC, BoB CC/DC): **Logistic growth cap** to prevent runaway extrapolation into a normalising market.
+Built with Next.js 14 + Recharts + Tailwind CSS. Reads from Supabase PostgreSQL.
 
-Residual bucket = PSI total minus sum of top banks. Ground-up aggregate reconciles against PSI within 0.3% (DC) to 8.1% (CC).
+| Page | What it shows |
+|------|---------------|
+| **Dashboard** | India-level KPIs, 24-month forecast charts with 90% CI bands, summary table |
+| **Bank Explorer** | Per-bank forecasts, CI, ranked table. Toggle CC/DC, pick any bank/month |
+| **Data Status** | Scraper run history — success/failure, record counts, error messages |
+| **Model Performance** | Every model's CV MAPE, color-coded (green ≤7%, amber ≤15%, red >15%) |
+| **About** | Methodology, data sources, accuracy summary, limitations |
 
-### Aggregate (India Total)
+### Web dashboard environment variables
 
-Prophet with structural event dummies (demonetisation, COVID, RBI credit tightening) and validated regressors (Repo Rate lag-9 for CC, DC transaction volume for DC).
+Create `web/.env.local`:
+```
+NEXT_PUBLIC_SUPABASE_URL=https://nwevrclikkiuemttovih.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+```
 
-## Data Sources
+---
 
-| Source | What | Frequency | Range |
-|--------|------|-----------|-------|
-| RBI PSI | India total CC/DC outstanding, txn volumes, PoS/ATM counts | Monthly | Apr 2004 – Feb 2026 |
-| RBI Bankwise | Per-bank CC/DC outstanding, ATMs, PoS, txn volumes | Monthly | Apr 2011 – May 2025 |
-| NPCI | UPI transaction volumes | Monthly | Apr 2016 – Feb 2026 |
-| RBI | Repo Rate | Monthly | Jan 2007 – Feb 2026 |
-| MOSPI | CPI | Monthly | Jan 2011 – Dec 2025 |
+## CI/CD Pipeline
+
+GitHub Actions workflow (`.github/workflows/monthly_pipeline.yml`) runs on the 15th of every month:
+
+```
+Job 1: Scrape    → Download latest RBI/NPCI data
+Job 2: Train     → Run ingestion + all models
+Job 3: Sync      → Push forecasts to Supabase
+Job 4: Notify    → Report success/failure summary
+```
+
+Can also be triggered manually via `workflow_dispatch`.
+
+**Required GitHub secrets:**
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_KEY`
+
+---
+
+## Database (Supabase)
+
+PostgreSQL with 11 tables. Schema in `supabase/migrations/001_initial_schema.sql`.
+
+Key tables:
+- `forecasts_aggregate` — India-level forecasts (CC/DC outstanding, txn volumes, UPI)
+- `forecasts_bank` — Per-bank forecasts (~80 bank × card type combinations)
+- `model_metadata` — CV MAPE, model type, training dates
+- `scraper_runs` — Scraper execution log
+- `raw_npci_upi` — Raw UPI data
+
+---
 
 ## Key Design Decisions
 
-- **Per-bank start dates** — merger banks train only on post-merger data (stable regime)
-- **log1p variance stabilisation** — applied to all bank models, back-transformed before evaluation
-- **CV MAPE on original scale** — Prophet CV outputs are expm1-transformed before computing MAPE
-- **No external regressors at bank level** — Granger causality tested 15 candidates; none passed the bar for production (documented in `reports/bankwise_eda_report.docx`)
-- **Header-name matching** — column detection by pattern, not position; survives RBI Excel layout changes
+| Decision | Rationale |
+|----------|-----------|
+| Ensemble over single model | No single model wins on all series. Weighted combination reduces variance. |
+| Conformal CIs over parametric | Residuals aren't Gaussian. Conformal intervals use actual CV errors — no distributional assumptions. |
+| DC vol regressor kept despite ablation | Removing it improved MAPE by 1.3pp, but it's the core business driver. Lag fix (0→4) recovered accuracy. |
+| CC training starts 2013 | Pre-2013 GFC decline is a different regime — including it pollutes growth-market forecasts. |
+| DC vol training starts 2022 | Pre-2022 growth contradicts post-2022 decline. Mixing regimes gives absurdly wide CIs. |
+| Per-bank start dates | Merger banks train only on post-merger data (stable regime). |
+| Logistic growth caps | Prevents runaway extrapolation for hypergrowth banks. |
+| No UPI QR regressor for CC | Ablation showed it worsened CV MAPE. Dropped until domain confirmation. |
+
+---
+
+## Audit
+
+Full AXIOM Round 4 quantitative audit: 12 diagnostic suites, **88/100 final score**.
+Report: `experiments/axiom_audit/AUDIT_ROUND4.md`
+
+Tests passed: stationarity (ADF/KPSS), residual diagnostics, Granger causality, regressor ablation, CI calibration, alternative model comparison, lag sensitivity, event sensitivity, scenario/stress testing, weight optimization, horizon drift, data leakage.
