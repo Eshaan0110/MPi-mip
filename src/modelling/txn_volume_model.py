@@ -46,7 +46,9 @@ from src.modelling.data_prep import (
 
 from src.utils.run_logger import RunLogger
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", module="cmdstanpy")
+warnings.filterwarnings("ignore", module="prophet")
+warnings.filterwarnings("ignore", category=FutureWarning, module="statsmodels")
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _PROCESSED    = _PROJECT_ROOT / "data" / "processed"

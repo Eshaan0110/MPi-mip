@@ -14,6 +14,7 @@ import argparse
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 
 STEPS = [
@@ -28,7 +29,7 @@ STEPS = [
         "cv_flag": True,
     },
     {
-        "name": "Bank-Level Model (20 CC + 20 DC)",
+        "name": "Bank-Level Model (10 CC + 15 DC)",
         "cmd": [sys.executable, "-m", "src.modelling.bank_model"],
         "cv_flag": True,
     },
@@ -92,7 +93,7 @@ def main():
         print()
 
         step_t0 = time.time()
-        result = subprocess.run(cmd, cwd=str(__file__).rsplit("\\", 1)[0] or ".")
+        result = subprocess.run(cmd, cwd=str(Path(__file__).resolve().parent))
 
         step_elapsed = time.time() - step_t0
 

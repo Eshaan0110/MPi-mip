@@ -35,8 +35,8 @@ DRY_RUN = "--dry-run" in sys.argv
 
 
 def get_client():
-    url = os.environ.get("SUPABASE_URL", "https://nwevrclikkiuemttovih.supabase.co")
-    key = os.environ.get("SUPABASE_SERVICE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53ZXZyY2xpa2tpdWVtdHRvdmloIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjA1Njc1MSwiZXhwIjoyMDk3NjMyNzUxfQ.YmEpjJsXPilnZ_WA2w74G91oGknziXJTMrizvMsta2o")
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_KEY", "")
     if not url or not key:
         logger.error("Set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables")
         sys.exit(1)
@@ -224,20 +224,27 @@ def sync_model_metadata(client):
                 }),
             })
 
-    # Aggregate-level MAPE (hardcoded from rebuild_dashboard.py)
-    agg_mape = {
-        "cc_outstanding": 3.46,
-        "dc_outstanding": 7.08,
-        "cc_txn_vol": 13.63,
-        "upi_vol": 12.31,
+    # Aggregate-level MAPE from CV metrics files
+    agg_cv_files = {
+        "cc_outstanding": PROCESSED / "forecast_cc_cv_metrics.csv",
+        "dc_outstanding": PROCESSED / "forecast_dc_cv_metrics.csv",
+        "cc_txn_vol": PROCESSED / "forecast_cc_vol_cv_metrics.csv",
+        "upi_vol": PROCESSED / "forecast_upi_vol_cv_metrics.csv",
     }
-    for metric, mape in agg_mape.items():
+    for metric, cv_path in agg_cv_files.items():
+        if not cv_path.exists():
+            logger.warning(f"  CV metrics file not found: {cv_path.name}")
+            continue
+        cv_df = pd.read_csv(cv_path)
+        if "mape" not in cv_df.columns:
+            continue
+        mean_mape = round(float(cv_df["mape"].mean() * 100), 2)
         rows.append({
             "bank_name": None,
             "card_type": None,
             "metric": metric,
             "model_type": "Prophet",
-            "cv_mape": mape,
+            "cv_mape": mean_mape,
         })
 
     if rows:

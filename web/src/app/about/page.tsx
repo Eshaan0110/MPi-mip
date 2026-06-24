@@ -13,6 +13,8 @@ function median(arr: number[]): number {
 export default function AboutPage() {
   const [ccMape, setCcMape] = useState<string>("—");
   const [dcMape, setDcMape] = useState<string>("—");
+  const [ccAggMape, setCcAggMape] = useState<string>("—");
+  const [dcAggMape, setDcAggMape] = useState<string>("—");
 
   useEffect(() => {
     async function load() {
@@ -22,6 +24,10 @@ export default function AboutPage() {
       const dcBanks = data.filter((m: ModelMetadata) => m.bank_name && m.card_type === "DC" && m.cv_mape != null);
       if (ccBanks.length > 0) setCcMape(median(ccBanks.map((m: ModelMetadata) => m.cv_mape!)).toFixed(1) + "%");
       if (dcBanks.length > 0) setDcMape(median(dcBanks.map((m: ModelMetadata) => m.cv_mape!)).toFixed(1) + "%");
+      const ccAgg = data.find((m: ModelMetadata) => !m.bank_name && m.metric === "cc_outstanding" && m.cv_mape != null);
+      const dcAgg = data.find((m: ModelMetadata) => !m.bank_name && m.metric === "dc_outstanding" && m.cv_mape != null);
+      if (ccAgg) setCcAggMape(ccAgg.cv_mape!.toFixed(1) + "%");
+      if (dcAgg) setDcAggMape(dcAgg.cv_mape!.toFixed(1) + "%");
     }
     load();
   }, []);
@@ -74,11 +80,11 @@ export default function AboutPage() {
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <p className="text-gray-500">CC Aggregate OOS MAPE</p>
-            <p className="text-xl font-bold text-gray-800">1.6%</p>
+            <p className="text-xl font-bold text-gray-800">{ccAggMape}</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <p className="text-gray-500">DC Aggregate OOS MAPE</p>
-            <p className="text-xl font-bold text-gray-800">1.0%</p>
+            <p className="text-xl font-bold text-gray-800">{dcAggMape}</p>
           </div>
         </div>
       </section>

@@ -21,8 +21,6 @@ dependencies = [
 #   ruptures>=1.1         -- never imported in src/
 #   scikit-learn>=1.5     -- never imported in src/ (prophet bundles its own)
 
-# Forecasting and dashboard dependencies will be added when Tasks 2 / 5 begin:
-#   prophet, plotly, jinja2, ruptures, scikit-learn
 
 [dependency-groups]
 dev = [
