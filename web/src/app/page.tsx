@@ -40,7 +40,8 @@ export default function DashboardPage() {
         setForecasts(data);
         const uniqueMonths = [...new Set(data.map((d) => d.forecast_month))].sort();
         setMonths(uniqueMonths);
-        if (uniqueMonths.length > 0) setSelectedMonth(uniqueMonths[0]);
+        if (uniqueMonths.length > 1) setSelectedMonth(uniqueMonths[1]);
+        else if (uniqueMonths.length > 0) setSelectedMonth(uniqueMonths[0]);
       }
       setLoading(false);
     }
@@ -80,10 +81,10 @@ export default function DashboardPage() {
   }));
 
   const METRIC_LABELS: Record<string, string> = {
-    cc_outstanding: "CC Outstanding",
-    dc_outstanding: "DC Outstanding",
-    cc_txn_vol: "CC Txn Volume",
-    dc_txn_vol: "DC Txn Volume",
+    cc_outstanding: "Credit Card Outstanding",
+    dc_outstanding: "Debit Card Outstanding",
+    cc_txn_vol: "Credit Card Transactions",
+    dc_txn_vol: "Debit Card Transactions",
     upi_vol: "UPI Volume",
   };
 
