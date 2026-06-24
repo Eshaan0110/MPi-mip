@@ -11,6 +11,19 @@ function mapeColor(mape: number | null): string {
   return "text-red-700 bg-red-50";
 }
 
+const ALLOWED_CC = new Set([
+  "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
+  "Kotak Mahindra Bank", "IndusInd Bank", "Bank of Baroda",
+  "Yes Bank", "Canara Bank", "HSBC",
+]);
+const ALLOWED_DC = new Set([
+  "State Bank of India", "Bank of Baroda", "Canara Bank", "HDFC Bank",
+  "Union Bank of India", "Punjab National Bank", "Axis Bank",
+  "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
+  "Central Bank of India", "UCO Bank", "ICICI Bank",
+  "Indian Overseas Bank", "Paytm Payments Bank",
+]);
+
 export default function ModelPerformancePage() {
   const [models, setModels] = useState<ModelMetadata[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +57,12 @@ export default function ModelPerformancePage() {
   }
 
   const filtered = filter === "all" ? models : models.filter((m) => m.card_type === filter);
-  const bankModels = filtered.filter((m) => m.bank_name);
+  const bankModels = filtered.filter((m) => {
+    if (!m.bank_name) return false;
+    if (m.card_type === "CC") return ALLOWED_CC.has(m.bank_name);
+    if (m.card_type === "DC") return ALLOWED_DC.has(m.bank_name);
+    return false;
+  });
   const aggModels = filtered.filter((m) => !m.bank_name && m.metric);
 
   return (

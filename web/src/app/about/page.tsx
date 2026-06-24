@@ -28,68 +28,84 @@ export default function AboutPage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-brand-700 mb-6">About MIP</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">About MIP</h1>
 
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-brand-600 mb-3">What is MIP?</h2>
+        <h2 className="text-lg font-semibold text-gray-700 mb-3">What is MIP?</h2>
         <p className="text-gray-600 leading-relaxed">
-          MPi Market Intelligence Platform (MIP) is an internal forecasting tool for India&apos;s
+          MPi Market Intelligence Platform (MIP) is a forecasting system for India&apos;s
           credit card, debit card, and digital payments market. It provides 24-month forward-looking
-          estimates at both aggregate (India) and individual bank levels.
+          estimates at both the national aggregate level and for individual banks — enabling card manufacturers,
+          banking partners, and strategy teams to plan production, assess market share, and anticipate demand shifts.
         </p>
       </section>
 
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-brand-600 mb-3">Data Sources</h2>
+        <h2 className="text-lg font-semibold text-gray-700 mb-3">Data Sources</h2>
         <ul className="space-y-2 text-sm text-gray-600">
-          <li><strong>RBI Bankwise:</strong> Monthly bank-level cards outstanding, ATMs, PoS terminals, transaction volumes</li>
-          <li><strong>RBI PSI:</strong> Payment System Indicators — aggregate CC/DC/UPI volumes</li>
-          <li><strong>NPCI UPI:</strong> Monthly UPI transaction volume and value</li>
-          <li><strong>RBI Repo Rate:</strong> Policy rate used as macroeconomic regressor</li>
+          <li><strong>RBI Bankwise PSI:</strong> Monthly bank-level cards outstanding, ATMs, PoS terminals, and transaction volumes — sourced directly from the Reserve Bank of India</li>
+          <li><strong>RBI Payment System Indicators:</strong> Aggregate CC/DC/UPI volumes published monthly by RBI</li>
+          <li><strong>NPCI UPI:</strong> Monthly UPI transaction volume and value from the National Payments Corporation of India</li>
+          <li><strong>RBI Repo Rate:</strong> Policy rate used as a macroeconomic regressor to capture monetary policy effects</li>
         </ul>
       </section>
 
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-brand-600 mb-3">Methodology</h2>
+        <h2 className="text-lg font-semibold text-gray-700 mb-3">Methodology</h2>
         <ul className="space-y-2 text-sm text-gray-600">
-          <li><strong>Aggregate Models:</strong> Prophet + ARIMA(1,1,1) + damped ETS ensemble with per-series CV-optimized weights</li>
-          <li><strong>Bank Models:</strong> Prophet (logistic growth caps) and Holt-Winters ETS for stable-growth banks</li>
-          <li><strong>Validation:</strong> Walk-forward cross-validation (48m initial, 6m horizon, 6m step) + out-of-sample testing</li>
-          <li><strong>Variable Selection:</strong> Granger causality testing on first-differenced series; ablation studies via CV MAPE</li>
-          <li><strong>Ground-Up:</strong> Individual bank models summed + residual adjustment = India total</li>
-          <li><strong>Confidence Intervals:</strong> Conformal prediction intervals from walk-forward CV residual quantiles (5th/95th)</li>
+          <li><strong>Ensemble Forecasting:</strong> Prophet + ARIMA(1,1,1) + damped ETS with per-series cross-validation-optimized weights</li>
+          <li><strong>Bank-Level Models:</strong> Top 10 credit card and top 15 debit card issuers modelled individually; remaining banks aggregated into a residual bucket</li>
+          <li><strong>Ground-Up Approach:</strong> Individual bank forecasts + residual = India total, cross-checked against aggregate for consistency</li>
+          <li><strong>Validation:</strong> Walk-forward cross-validation (48-month initial window, 6-month horizon, 6-month step) with out-of-sample testing</li>
+          <li><strong>Confidence Intervals:</strong> 90% conformal prediction intervals from walk-forward CV residual quantiles</li>
         </ul>
       </section>
 
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-brand-600 mb-3">Accuracy</h2>
+        <h2 className="text-lg font-semibold text-gray-700 mb-3">Forecast Accuracy</h2>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <p className="text-gray-500">CC Bank Median CV MAPE</p>
-            <p className="text-xl font-bold text-brand-700">{ccMape}</p>
+            <p className="text-xl font-bold text-gray-800">{ccMape}</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <p className="text-gray-500">DC Bank Median CV MAPE</p>
-            <p className="text-xl font-bold text-brand-700">{dcMape}</p>
+            <p className="text-xl font-bold text-gray-800">{dcMape}</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <p className="text-gray-500">CC Aggregate OOS MAPE</p>
-            <p className="text-xl font-bold text-brand-700">1.6%</p>
+            <p className="text-xl font-bold text-gray-800">1.6%</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <p className="text-gray-500">DC Aggregate OOS MAPE</p>
-            <p className="text-xl font-bold text-brand-700">1.0%</p>
+            <p className="text-xl font-bold text-gray-800">1.0%</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-700 mb-3">Coverage</h2>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <p className="text-gray-500">Credit Card Banks Modelled</p>
+            <p className="text-xl font-bold text-gray-800">10 + Residual</p>
+            <p className="text-xs text-gray-400 mt-1">~91% of India total outstanding</p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <p className="text-gray-500">Debit Card Banks Modelled</p>
+            <p className="text-xl font-bold text-gray-800">15 + Residual</p>
+            <p className="text-xs text-gray-400 mt-1">~83% of India total outstanding</p>
           </div>
         </div>
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-brand-600 mb-3">Limitations</h2>
+        <h2 className="text-lg font-semibold text-gray-700 mb-3">Limitations</h2>
         <ul className="space-y-1 text-sm text-gray-500">
-          <li>Forecasts assume historical patterns continue; structural breaks (new regulations, mergers) are not predicted</li>
-          <li>Jun 2025 CC dip confirmed as RBI reporting blip — excluded from model assessment</li>
-          <li>NPCI UPI data has occasional revisions; forecasts use latest available figures</li>
-          <li>Bank-exclusive regressors (branches, CASA, NPA) not yet incorporated — planned for Phase 3</li>
+          <li>Forecasts assume historical patterns continue — structural breaks (new regulations, bank mergers) are not predicted</li>
+          <li>Jun 2025 CC dip confirmed as an RBI reporting anomaly and excluded from model assessment</li>
+          <li>NPCI UPI data undergoes occasional revisions; forecasts use the latest available figures</li>
+          <li>Forward-looking variables (bank news, policy announcements) planned for Phase 3</li>
         </ul>
       </section>
     </div>

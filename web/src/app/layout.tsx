@@ -15,9 +15,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      <body className="min-h-screen flex flex-col">
         <NavBar />
-        <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+        <main className="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">{children}</main>
+        <footer className="border-t border-gray-200 bg-white mt-8">
+          <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between text-xs text-gray-400">
+            <span>MPi Market Intelligence Platform</span>
+            <span>Data sourced from RBI &amp; NPCI</span>
+          </div>
+        </footer>
       </body>
     </html>
   );

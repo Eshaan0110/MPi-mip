@@ -7,8 +7,22 @@ import { ForecastChart, COLORS } from "@/components/ForecastChart";
 import { MonthSelector } from "@/components/MonthSelector";
 import type { BankForecast } from "@/lib/types";
 
-function toM(v: number): number { return v / 10; }
+function toM(v: number): number { return v / 1_000_000; }
 function fmtM(n: number, decimals = 1): string { return n.toFixed(decimals) + " M"; }
+
+const ALLOWED_CC_BANKS = new Set([
+  "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
+  "Kotak Mahindra Bank", "IndusInd Bank", "Bank of Baroda",
+  "Yes Bank", "Canara Bank", "HSBC",
+]);
+
+const ALLOWED_DC_BANKS = new Set([
+  "State Bank of India", "Bank of Baroda", "Canara Bank", "HDFC Bank",
+  "Union Bank of India", "Punjab National Bank", "Axis Bank",
+  "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
+  "Central Bank of India", "UCO Bank", "ICICI Bank",
+  "Indian Overseas Bank", "Paytm Payments Bank",
+]);
 
 function formatDate(m: string): string {
   const d = new Date(m.length === 7 ? m + "-01" : m);
@@ -39,7 +53,7 @@ export default function BankExplorerPage() {
         const uniqueMonths = [...new Set(data.map((d) => d.forecast_month))].sort();
         setMonths(uniqueMonths);
         if (uniqueMonths.length > 0) setSelectedMonth(uniqueMonths[0]);
-        const ccBanks = [...new Set(data.filter((d) => d.card_type === "CC").map((d) => d.bank_name))].sort();
+        const ccBanks = [...new Set(data.filter((d) => d.card_type === "CC").map((d) => d.bank_name))].filter((b) => ALLOWED_CC_BANKS.has(b)).sort();
         if (ccBanks.length > 0) setSelectedBanks([ccBanks[0]]);
       }
       setLoading(false);
@@ -51,13 +65,15 @@ export default function BankExplorerPage() {
   if (error) return <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center my-8"><p className="text-red-700 font-medium">Failed to load bank data</p><p className="text-red-600 text-sm mt-1">{error}</p></div>;
   if (forecasts.length === 0) return <div className="text-center py-16"><h1 className="text-2xl font-bold text-gray-800 mb-4">Bank Explorer</h1><p className="text-gray-500">No bank forecast data available yet.</p></div>;
 
+  const allowedSet = cardType === "CC" ? ALLOWED_CC_BANKS : ALLOWED_DC_BANKS;
   const banksForType = [...new Set(forecasts.filter((f) => f.card_type === cardType).map((f) => f.bank_name))]
-    .filter((b) => !b.startsWith("_"))
+    .filter((b) => allowedSet.has(b))
     .sort();
 
   const handleCardTypeChange = (ct: "CC" | "DC") => {
     setCardType(ct);
-    const newBanks = [...new Set(forecasts.filter((f) => f.card_type === ct).map((f) => f.bank_name))].filter((b) => !b.startsWith("_")).sort();
+    const allowed = ct === "CC" ? ALLOWED_CC_BANKS : ALLOWED_DC_BANKS;
+    const newBanks = [...new Set(forecasts.filter((f) => f.card_type === ct).map((f) => f.bank_name))].filter((b) => allowed.has(b)).sort();
     const kept = selectedBanks.filter((b) => newBanks.includes(b));
     if (kept.length === 0 && newBanks.length > 0) setSelectedBanks([newBanks[0]]);
     else setSelectedBanks(kept);
@@ -75,14 +91,15 @@ export default function BankExplorerPage() {
 
   const primaryBank = selectedBanks[0] || "";
 
-  // Data for single bank view
+  // Data for single bank view — pre-convert to lakhs so ForecastChart's /10 gives Millions
+  const RAW_TO_LAKH = 1 / 100_000;
   const bankChartData = forecasts
     .filter((f) => f.bank_name === primaryBank && f.card_type === cardType)
     .map((f) => ({
       month: f.forecast_month,
-      forecast: f.yhat,
-      lower: f.yhat_lower ?? undefined,
-      upper: f.yhat_upper ?? undefined,
+      forecast: f.yhat * RAW_TO_LAKH,
+      lower: f.yhat_lower != null ? f.yhat_lower * RAW_TO_LAKH : undefined,
+      upper: f.yhat_upper != null ? f.yhat_upper * RAW_TO_LAKH : undefined,
     }));
 
   // Data for multi-bank comparison
@@ -94,7 +111,7 @@ export default function BankExplorerPage() {
     const row: any = { month: m };
     for (const bank of selectedBanks) {
       const rec = forecasts.find((f) => f.bank_name === bank && f.card_type === cardType && f.forecast_month === m);
-      row[bank] = rec ? rec.yhat : undefined;
+      row[bank] = rec ? rec.yhat * RAW_TO_LAKH : undefined;
     }
     return row;
   });
@@ -109,7 +126,7 @@ export default function BankExplorerPage() {
   const monthIdx = months.indexOf(selectedMonth);
   const prevMonth = monthIdx > 0 ? months[monthIdx - 1] : null;
 
-  const bankMonthData = forecasts.filter((f) => f.forecast_month === selectedMonth && f.card_type === cardType && !f.bank_name.startsWith("_"));
+  const bankMonthData = forecasts.filter((f) => f.forecast_month === selectedMonth && f.card_type === cardType && allowedSet.has(f.bank_name));
   const prevBankData = prevMonth ? forecasts.filter((f) => f.forecast_month === prevMonth && f.card_type === cardType) : [];
 
   const rankedBanks = [...bankMonthData].sort((a, b) => b.yhat - a.yhat).map((d) => {
