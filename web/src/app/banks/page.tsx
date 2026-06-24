@@ -13,7 +13,7 @@ function fmtM(n: number, decimals = 1): string { return n.toFixed(decimals) + " 
 const ALLOWED_CC_BANKS = new Set([
   "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
   "Kotak Mahindra Bank", "IndusInd Bank", "Bank of Baroda",
-  "Yes Bank", "Canara Bank", "HSBC",
+  "Yes Bank", "Canara Bank", "HSBC", "_RESIDUAL",
 ]);
 
 const ALLOWED_DC_BANKS = new Set([
@@ -21,8 +21,13 @@ const ALLOWED_DC_BANKS = new Set([
   "Union Bank of India", "Punjab National Bank", "Axis Bank",
   "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
   "Central Bank of India", "UCO Bank", "ICICI Bank",
-  "Indian Overseas Bank", "Paytm Payments Bank",
+  "Indian Overseas Bank", "Paytm Payments Bank", "_RESIDUAL",
 ]);
+
+function displayBank(name: string): string {
+  if (name === "_RESIDUAL") return "All Other Banks (Residual)";
+  return name;
+}
 
 function formatDate(m: string): string {
   const d = new Date(m.length === 7 ? m + "-01" : m);
@@ -119,7 +124,7 @@ export default function BankExplorerPage() {
 
   const multiLines = selectedBanks.map((bank, i) => ({
     key: bank,
-    label: bank,
+    label: displayBank(bank),
     color: COLORS[i % COLORS.length],
   }));
 
@@ -196,7 +201,7 @@ export default function BankExplorerPage() {
             className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white w-full max-w-xs"
           >
             {banksForType.map((b) => (
-              <option key={b} value={b}>{b}</option>
+              <option key={b} value={b}>{displayBank(b)}</option>
             ))}
           </select>
         </div>
@@ -234,7 +239,7 @@ export default function BankExplorerPage() {
                   }`}
                   style={isSelected ? { backgroundColor: COLORS[colorIdx % COLORS.length] } : {}}
                 >
-                  {bank}
+                  {displayBank(bank)}
                 </button>
               );
             })}
@@ -248,7 +253,7 @@ export default function BankExplorerPage() {
           <KpiCard
             title="Forecast"
             value={fmtM(toM(primaryData.yhat))}
-            subtitle={`${primaryBank}`}
+            subtitle={displayBank(primaryBank)}
           />
           <KpiCard
             title="90% CI Range"
@@ -270,7 +275,7 @@ export default function BankExplorerPage() {
       {/* Chart */}
       <div className="mb-6">
         {tab === "single" ? (
-          <ForecastChart data={bankChartData} title={`${primaryBank} — ${cardType === "CC" ? "Credit Card" : "Debit Card"} Forecast`} />
+          <ForecastChart data={bankChartData} title={`${displayBank(primaryBank)} — ${cardType === "CC" ? "Credit Card" : "Debit Card"} Forecast`} />
         ) : selectedBanks.length > 0 ? (
           <ForecastChart
             data={[]}
@@ -322,7 +327,7 @@ export default function BankExplorerPage() {
                           style={{ backgroundColor: COLORS[selectedBanks.indexOf(d.bank_name) % COLORS.length] }}
                         />
                       )}
-                      {d.bank_name}
+                      {displayBank(d.bank_name)}
                     </td>
                     <td className="py-3 text-right font-medium">{fmtM(toM(d.yhat))}</td>
                     <td className="py-3 text-right text-gray-400">
