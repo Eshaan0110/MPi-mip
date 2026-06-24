@@ -69,6 +69,11 @@ def upsert_df(client, table: str, df: pd.DataFrame, conflict_cols: list[str]):
 def sync_bankwise_forecasts(client):
     """Sync per-bank forecast parquets to forecasts_bank table."""
     logger.info("Syncing bank forecasts...")
+
+    if not DRY_RUN:
+        logger.info("  Clearing old forecasts_bank rows...")
+        client.table("forecasts_bank").delete().neq("id", 0).execute()
+
     all_rows = []
 
     for f in sorted(FORECASTS.glob("*_forecast.parquet")):
@@ -113,6 +118,11 @@ def sync_bankwise_forecasts(client):
 def sync_aggregate_forecasts(client):
     """Sync aggregate forecast parquets to forecasts_aggregate table."""
     logger.info("Syncing aggregate forecasts...")
+
+    if not DRY_RUN:
+        logger.info("  Clearing old forecasts_aggregate rows...")
+        client.table("forecasts_aggregate").delete().neq("id", 0).execute()
+
     all_rows = []
 
     metric_files = {

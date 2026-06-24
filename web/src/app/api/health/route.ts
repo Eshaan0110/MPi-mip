@@ -12,16 +12,19 @@ export async function GET() {
   }
 
   try {
-    const [{ count }, { data: lastPipeline }] = await Promise.all([
-      supabase.from("forecasts_bank").select("*", { count: "exact", head: true }),
-      supabase.from("pipeline_runs").select("started_at, status").order("started_at", { ascending: false }).limit(1).single(),
-    ]);
+    const { count } = await supabase.from("forecasts_bank").select("*", { count: "exact", head: true });
+    const { data: lastRun } = await supabase
+      .from("scraper_runs")
+      .select("started_at, status")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     return NextResponse.json({
       status: "healthy",
       database: "connected",
       forecast_rows: count ?? 0,
-      last_pipeline: lastPipeline ?? null,
+      last_scraper_run: lastRun ?? null,
       checked_at: new Date().toISOString(),
     });
   } catch (e) {

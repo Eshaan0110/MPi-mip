@@ -52,11 +52,12 @@ export default function AboutPage() {
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-brand-600 mb-3">Methodology</h2>
         <ul className="space-y-2 text-sm text-gray-600">
-          <li><strong>Models:</strong> Facebook Prophet (with logistic growth caps) and Holt-Winters ETS for stable-growth banks</li>
-          <li><strong>Validation:</strong> Walk-forward cross-validation (36m initial, 6m horizon, 6m step) + out-of-sample testing on held-out months</li>
-          <li><strong>Variable Selection:</strong> Granger causality testing on first-differenced series to validate regressors</li>
+          <li><strong>Aggregate Models:</strong> Prophet + ARIMA(1,1,1) + damped ETS ensemble with per-series CV-optimized weights</li>
+          <li><strong>Bank Models:</strong> Prophet (logistic growth caps) and Holt-Winters ETS for stable-growth banks</li>
+          <li><strong>Validation:</strong> Walk-forward cross-validation (48m initial, 6m horizon, 6m step) + out-of-sample testing</li>
+          <li><strong>Variable Selection:</strong> Granger causality testing on first-differenced series; ablation studies via CV MAPE</li>
           <li><strong>Ground-Up:</strong> Individual bank models summed + residual adjustment = India total</li>
-          <li><strong>Confidence Intervals:</strong> 90% prediction intervals from Prophet/ETS simulation</li>
+          <li><strong>Confidence Intervals:</strong> Conformal prediction intervals from walk-forward CV residual quantiles (5th/95th)</li>
         </ul>
       </section>
 

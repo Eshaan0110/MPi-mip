@@ -15,7 +15,7 @@ export function MonthSelector({ months, selected, onChange }: MonthSelectorProps
     >
       {months.map((m) => (
         <option key={m} value={m}>
-          {new Date(m + "-01").toLocaleDateString("en-IN", {
+          {new Date(m.length === 7 ? m + "-01" : m).toLocaleDateString("en-IN", {
             month: "long",
             year: "numeric",
           })}
