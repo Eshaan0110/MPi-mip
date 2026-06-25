@@ -10,12 +10,12 @@ interface KpiCardProps {
 
 export function KpiCard({ title, value, subtitle, trend, trendUp }: KpiCardProps) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
-      <p className="text-sm text-gray-500 font-medium">{title}</p>
-      <p className="text-2xl font-bold text-brand-700 mt-1">{value}</p>
-      {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
+      <p className="text-sm text-slate-400 font-medium">{title}</p>
+      <p className="text-2xl font-bold text-white mt-1">{value}</p>
+      {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
       {trend && (
-        <p className={`text-sm mt-2 font-medium ${trendUp ? "text-green-600" : "text-red-500"}`}>
+        <p className={`text-sm mt-2 font-medium ${trendUp ? "text-emerald-400" : "text-red-400"}`}>
           {trendUp ? "+" : ""}{trend}
         </p>
       )}

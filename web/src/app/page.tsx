@@ -48,9 +48,9 @@ export default function DashboardPage() {
     load();
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-400">Loading forecasts...</div></div>;
-  if (error) return <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center my-8"><p className="text-red-700 font-medium">Failed to load forecast data</p><p className="text-red-600 text-sm mt-1">{error}</p></div>;
-  if (forecasts.length === 0) return <div className="text-center py-16"><h1 className="text-2xl font-bold text-gray-800 mb-4">MIP Dashboard</h1><p className="text-gray-500">No forecast data in database yet.</p></div>;
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-slate-500">Loading forecasts...</div></div>;
+  if (error) return <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-6 text-center my-8"><p className="text-red-400 font-medium">Failed to load forecast data</p><p className="text-red-500 text-sm mt-1">{error}</p></div>;
+  if (forecasts.length === 0) return <div className="text-center py-16"><h1 className="text-2xl font-bold text-white mb-4">MIP Dashboard</h1><p className="text-slate-500">No forecast data in database yet.</p></div>;
 
   const monthIdx = months.indexOf(selectedMonth);
   const prevMonth = monthIdx > 0 ? months[monthIdx - 1] : null;
@@ -64,8 +64,6 @@ export default function DashboardPage() {
   const ccOutstanding = get("cc_outstanding");
   const dcOutstanding = get("dc_outstanding");
   const upiVol = get("upi_vol");
-  const ccTxn = get("cc_txn_vol");
-  const dcTxn = get("dc_txn_vol");
 
   const ccPrev = getPrev("cc_outstanding");
   const dcPrev = getPrev("dc_outstanding");
@@ -92,29 +90,16 @@ export default function DashboardPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
-          <p className="text-sm text-gray-400 mt-0.5">All values in Millions</p>
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-0.5">All values in Millions</p>
         </div>
         <MonthSelector months={months} selected={selectedMonth} onChange={setSelectedMonth} />
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <KpiCard
-          title="Credit Cards"
-          value={ccOutstanding ? fmtM(toM(ccOutstanding.yhat)) : "—"}
-          subtitle="Outstanding"
-        />
-        <KpiCard
-          title="Debit Cards"
-          value={dcOutstanding ? fmtM(toM(dcOutstanding.yhat)) : "—"}
-          subtitle="Outstanding"
-        />
-        <KpiCard
-          title="UPI Transactions"
-          value={upiVol ? fmtM(toM(upiVol.yhat), 0) : "—"}
-          subtitle="Monthly volume"
-        />
+        <KpiCard title="Credit Cards" value={ccOutstanding ? fmtM(toM(ccOutstanding.yhat)) : "—"} subtitle="Outstanding" />
+        <KpiCard title="Debit Cards" value={dcOutstanding ? fmtM(toM(dcOutstanding.yhat)) : "—"} subtitle="Outstanding" />
+        <KpiCard title="UPI Transactions" value={upiVol ? fmtM(toM(upiVol.yhat), 0) : "—"} subtitle="Monthly volume" />
         <KpiCard
           title="CC New Cards"
           value={ccManufacture !== null ? (ccManufacture >= 0 ? "+" : "") + fmtM(toM(ccManufacture), 2) : "—"}
@@ -131,22 +116,20 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <ForecastChart data={ccChartData} title="Credit Cards Outstanding" />
         <ForecastChart data={dcChartData} title="Debit Cards Outstanding" />
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
+        <h3 className="text-sm font-semibold text-slate-200 mb-1">
           All Metrics — {formatDate(selectedMonth)}
         </h3>
-        <p className="text-xs text-gray-400 mb-4">Values in Millions</p>
+        <p className="text-xs text-slate-500 mb-4">Values in Millions</p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-gray-500">
+              <tr className="border-b border-slate-700 text-left text-slate-400">
                 <th className="pb-3 font-medium">Metric</th>
                 <th className="pb-3 text-right font-medium">Forecast</th>
                 <th className="pb-3 text-right font-medium">Lower 90%</th>
@@ -155,11 +138,11 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {monthData.map((d) => (
-                <tr key={d.metric} className="border-b last:border-0 hover:bg-gray-50">
-                  <td className="py-3 font-medium">{METRIC_LABELS[d.metric] || d.metric}</td>
-                  <td className="py-3 text-right font-medium">{fmtM(toM(d.yhat))}</td>
-                  <td className="py-3 text-right text-gray-400">{d.yhat_lower ? fmtM(toM(d.yhat_lower)) : "—"}</td>
-                  <td className="py-3 text-right text-gray-400">{d.yhat_upper ? fmtM(toM(d.yhat_upper)) : "—"}</td>
+                <tr key={d.metric} className="border-b border-slate-700/50 last:border-0 hover:bg-slate-700/30">
+                  <td className="py-3 font-medium text-slate-200">{METRIC_LABELS[d.metric] || d.metric}</td>
+                  <td className="py-3 text-right font-medium text-white">{fmtM(toM(d.yhat))}</td>
+                  <td className="py-3 text-right text-slate-400">{d.yhat_lower ? fmtM(toM(d.yhat_lower)) : "—"}</td>
+                  <td className="py-3 text-right text-slate-400">{d.yhat_upper ? fmtM(toM(d.yhat_upper)) : "—"}</td>
                 </tr>
               ))}
             </tbody>

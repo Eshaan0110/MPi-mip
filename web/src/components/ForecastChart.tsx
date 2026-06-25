@@ -37,8 +37,8 @@ interface ForecastChartProps {
 }
 
 const COLORS = [
-  "#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed",
-  "#0891b2", "#be185d", "#65a30d", "#ea580c", "#6366f1",
+  "#60a5fa", "#f87171", "#34d399", "#fbbf24", "#a78bfa",
+  "#22d3ee", "#f472b6", "#a3e635", "#fb923c", "#818cf8",
 ];
 
 function toMillions(v: number): number {
@@ -68,13 +68,13 @@ function formatMonthLong(m: string): string {
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-4 py-3 text-sm min-w-[180px]">
-      <p className="font-semibold text-gray-700 mb-2 text-[13px]">{formatMonthLong(label)}</p>
+    <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl px-4 py-3 text-sm min-w-[180px]">
+      <p className="font-semibold text-slate-200 mb-2 text-[13px]">{formatMonthLong(label)}</p>
       {payload.map((p: any, i: number) => {
         if (p.dataKey === "ciRange") {
           const [low, high] = p.value || [];
           return (
-            <p key={i} className="text-gray-500 text-xs mt-1 pt-1 border-t border-gray-100">
+            <p key={i} className="text-slate-400 text-xs mt-1 pt-1 border-t border-slate-700">
               90% CI: {formatM(low)} – {formatM(high)}
             </p>
           );
@@ -92,12 +92,12 @@ function CustomTooltip({ active, payload, label }: any) {
 
 function ZoomControls({ isZoomed, onReset }: { isZoomed: boolean; onReset: () => void }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-gray-400">
+    <div className="flex items-center gap-3 text-xs text-slate-500">
       <span>Drag on chart to zoom</span>
       {isZoomed && (
         <button
           onClick={onReset}
-          className="px-2.5 py-1 rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors font-medium"
+          className="px-2.5 py-1 rounded-md bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors font-medium"
         >
           Reset zoom
         </button>
@@ -166,11 +166,11 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
       : chartData;
 
     return (
-      <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Values in Millions</p>
+            <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Values in Millions</p>
           </div>
           <ZoomControls isZoomed={!!(zoomLeft && zoomRight)} onReset={resetZoom} />
         </div>
@@ -182,23 +182,11 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
             onMouseMove={handleMouseMove}
             onMouseUp={() => handleMouseUp(allMonths)}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-            <XAxis
-              dataKey="month"
-              tick={{ fontSize: 12, fill: "#6b7280" }}
-              tickFormatter={formatMonth}
-              axisLine={{ stroke: "#e5e7eb" }}
-              minTickGap={30}
-            />
-            <YAxis
-              tick={{ fontSize: 12, fill: "#6b7280" }}
-              tickFormatter={formatAxisTick}
-              axisLine={false}
-              tickLine={false}
-              width={65}
-            />
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatMonth} axisLine={{ stroke: "#475569" }} minTickGap={30} />
+            <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
             <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12, color: "#94a3b8" }} />
             {multiLines.map((line) => (
               <Line
                 key={line.key}
@@ -207,22 +195,15 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
                 stroke={line.color}
                 strokeWidth={2.5}
                 dot={{ r: 3, strokeWidth: 0, fill: line.color }}
-                activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}
+                activeDot={{ r: 5, strokeWidth: 2, stroke: "#1e293b" }}
                 name={line.label}
               />
             ))}
             {refAreaLeft && refAreaRight && (
-              <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#2563eb" fillOpacity={0.1} />
+              <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
             )}
             {!zoomLeft && (
-              <Brush
-                dataKey="month"
-                height={28}
-                stroke="#d1d5db"
-                fill="#f9fafb"
-                tickFormatter={formatMonth}
-                travellerWidth={10}
-              />
+              <Brush dataKey="month" height={28} stroke="#475569" fill="#1e293b" tickFormatter={formatMonth} travellerWidth={10} />
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -247,11 +228,11 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
     : chartData;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
+    <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Values in Millions{unit ? ` (${unit})` : ""}</p>
+          <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Values in Millions{unit ? ` (${unit})` : ""}</p>
         </div>
         <ZoomControls isZoomed={!!(zoomLeft && zoomRight)} onReset={resetZoom} />
       </div>
@@ -263,66 +244,24 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
           onMouseMove={handleMouseMove}
           onMouseUp={() => handleMouseUp(allMonths)}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-          <XAxis
-            dataKey="month"
-            tick={{ fontSize: 12, fill: "#6b7280" }}
-            tickFormatter={formatMonth}
-            axisLine={{ stroke: "#e5e7eb" }}
-            minTickGap={30}
-          />
-          <YAxis
-            tick={{ fontSize: 12, fill: "#6b7280" }}
-            tickFormatter={formatAxisTick}
-            axisLine={false}
-            tickLine={false}
-            width={65}
-          />
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatMonth} axisLine={{ stroke: "#475569" }} minTickGap={30} />
+          <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
           <Tooltip content={<CustomTooltip />} />
           {hasCi && (
-            <Area
-              dataKey="ciRange"
-              stroke="none"
-              fill="#2563eb"
-              fillOpacity={0.1}
-              name="90% CI"
-              type="monotone"
-            />
+            <Area dataKey="ciRange" stroke="none" fill="#60a5fa" fillOpacity={0.12} name="90% CI" type="monotone" />
           )}
           {chartData.some((d) => d.actual !== undefined) && (
-            <Line
-              type="monotone"
-              dataKey="actual"
-              stroke="#111827"
-              strokeWidth={2}
-              dot={{ r: 3, strokeWidth: 0, fill: "#111827" }}
-              activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}
-              name="Actual"
-            />
+            <Line type="monotone" dataKey="actual" stroke="#e2e8f0" strokeWidth={2} dot={{ r: 3, strokeWidth: 0, fill: "#e2e8f0" }} activeDot={{ r: 5, strokeWidth: 2, stroke: "#1e293b" }} name="Actual" />
           )}
           {chartData.some((d) => d.forecast !== undefined) && (
-            <Line
-              type="monotone"
-              dataKey="forecast"
-              stroke="#2563eb"
-              strokeWidth={2.5}
-              dot={{ r: 3, strokeWidth: 0, fill: "#2563eb" }}
-              activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff" }}
-              name="Forecast"
-            />
+            <Line type="monotone" dataKey="forecast" stroke="#60a5fa" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 0, fill: "#60a5fa" }} activeDot={{ r: 6, strokeWidth: 2, stroke: "#1e293b" }} name="Forecast" />
           )}
           {refAreaLeft && refAreaRight && (
-            <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#2563eb" fillOpacity={0.1} />
+            <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
           )}
           {!zoomLeft && (
-            <Brush
-              dataKey="month"
-              height={28}
-              stroke="#d1d5db"
-              fill="#f9fafb"
-              tickFormatter={formatMonth}
-              travellerWidth={10}
-            />
+            <Brush dataKey="month" height={28} stroke="#475569" fill="#1e293b" tickFormatter={formatMonth} travellerWidth={10} />
           )}
         </ComposedChart>
       </ResponsiveContainer>

@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --foreground: #0d1f33;
-  --background: #f8fafc;
+  --foreground: #e2e8f0;
+  --background: #0f172a;
 }
 
 body {
@@ -12,3 +12,12 @@ body {
   background: var(--background);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Select dropdown dark */
+select option { background: #1e293b; color: #e2e8f0; }

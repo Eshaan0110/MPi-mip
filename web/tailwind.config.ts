@@ -13,6 +13,11 @@ const config: Config = {
           700: "#1b3a5c",
           900: "#0d1f33",
         },
+        surface: {
+          DEFAULT: "#1e293b",
+          light: "#334155",
+          dark: "#0f172a",
+        },
       },
     },
   },
