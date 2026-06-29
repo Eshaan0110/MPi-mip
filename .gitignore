@@ -51,6 +51,7 @@ web/.env.local
 
 # Word temp files
 ~$*.docx
+reports/unpacked/
 
 # Note: uv.lock IS committed for reproducibility — do not ignore it.
 .claude/
