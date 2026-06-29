@@ -14,6 +14,7 @@ Run:
 import asyncio
 import re
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from playwright.async_api import async_playwright
@@ -85,7 +86,38 @@ async def scrape_download_links() -> list[dict]:
 
     results.sort(key=lambda x: (x["year"], x["month"]), reverse=True)
     logger.info(f"Found {len(results)} bankwise files on RBI page")
+
+    if results:
+        check_data_freshness(results[0]["year"], results[0]["month"])
+
     return results
+
+
+def check_data_freshness(latest_year: int, latest_month: int) -> None:
+    """Warn if the latest available data is older than expected.
+
+    RBI typically publishes bankwise data with a ~2 month lag.
+    e.g. in June 2026, we expect April 2026 data to be available.
+    """
+    today = date.today()
+    expected = date(today.year, today.month, 1) - timedelta(days=62)
+    expected_year, expected_month = expected.year, expected.month
+
+    latest = date(latest_year, latest_month, 1)
+    expected_date = date(expected_year, expected_month, 1)
+
+    if latest < expected_date:
+        months_behind = (expected_date.year - latest.year) * 12 + (expected_date.month - latest.month)
+        logger.warning(
+            f"DATA FRESHNESS: Latest available is {latest_month:02d}/{latest_year}, "
+            f"but expected at least {expected_month:02d}/{expected_year} "
+            f"({months_behind} month(s) behind). "
+            f"RBI may not have published the new data yet."
+        )
+    else:
+        logger.info(
+            f"Data freshness OK: latest available is {latest_month:02d}/{latest_year}"
+        )
 
 
 async def download_file(url: str, dest: Path) -> bool:
