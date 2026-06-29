@@ -10,6 +10,7 @@ const links = [
   { href: "/status", label: "Data Status" },
   { href: "/models", label: "Model Performance" },
   { href: "/about", label: "About" },
+  { href: "/agent", label: "AI Agent" },
 ];
 
 export function NavBar() {
