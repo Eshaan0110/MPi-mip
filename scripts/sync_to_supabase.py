@@ -15,6 +15,7 @@ Run:
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -203,6 +204,8 @@ def sync_model_metadata(client):
     logger.info("Syncing model metadata...")
     rows = []
 
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     # Bank-level CV MAPE from groundup summaries
     for card_type in ["cc", "dc"]:
         cv_path = GROUNDUP / f"bank_cv_summary_{card_type}.csv"
@@ -216,6 +219,7 @@ def sync_model_metadata(client):
                 "metric": None,
                 "model_type": "Prophet",
                 "cv_mape": round(float(r["mape_mean"]), 2),
+                "last_trained": now_iso,
                 "params_json": json.dumps({
                     "cv_windows": int(r["cv_windows"]),
                     "mape_median": round(float(r["mape_median"]), 2),
@@ -245,6 +249,7 @@ def sync_model_metadata(client):
             "metric": metric,
             "model_type": "Prophet",
             "cv_mape": mean_mape,
+            "last_trained": now_iso,
         })
 
     if rows:
