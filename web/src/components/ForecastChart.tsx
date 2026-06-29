@@ -14,6 +14,7 @@ import {
   Brush,
   ReferenceArea,
 } from "recharts";
+import { useTheme } from "./ThemeProvider";
 
 interface DataPoint {
   month: string;
@@ -65,16 +66,16 @@ function formatMonthLong(m: string): string {
   return d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 }
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label, isDark }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl px-4 py-3 text-sm min-w-[180px]">
-      <p className="font-semibold text-slate-200 mb-2 text-[13px]">{formatMonthLong(label)}</p>
+    <div className={`rounded-lg shadow-xl px-4 py-3 text-sm min-w-[180px] ${isDark ? "bg-slate-800 border border-slate-600" : "bg-white border border-gray-200"}`}>
+      <p className={`font-semibold mb-2 text-[13px] ${isDark ? "text-slate-200" : "text-gray-800"}`}>{formatMonthLong(label)}</p>
       {payload.map((p: any, i: number) => {
         if (p.dataKey === "ciRange") {
           const [low, high] = p.value || [];
           return (
-            <p key={i} className="text-slate-400 text-xs mt-1 pt-1 border-t border-slate-700">
+            <p key={i} className={`text-xs mt-1 pt-1 ${isDark ? "text-slate-400 border-t border-slate-700" : "text-gray-500 border-t border-gray-200"}`}>
               90% CI: {formatM(low)} – {formatM(high)}
             </p>
           );
@@ -92,12 +93,12 @@ function CustomTooltip({ active, payload, label }: any) {
 
 function ZoomControls({ isZoomed, onReset }: { isZoomed: boolean; onReset: () => void }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-slate-500">
+    <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500">
       <span>Drag on chart to zoom</span>
       {isZoomed && (
         <button
           onClick={onReset}
-          className="px-2.5 py-1 rounded-md bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors font-medium"
+          className="px-2.5 py-1 rounded-md bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors font-medium"
         >
           Reset zoom
         </button>
@@ -107,6 +108,15 @@ function ZoomControls({ isZoomed, onReset }: { isZoomed: boolean; onReset: () =>
 }
 
 export function ForecastChart({ data, title, unit, multiLines, multiData }: ForecastChartProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
+  const gridColor = isDark ? "#334155" : "#e2e8f0";
+  const tickColor = isDark ? "#94a3b8" : "#64748b";
+  const axisColor = isDark ? "#475569" : "#cbd5e1";
+  const brushFill = isDark ? "#1e293b" : "#f1f5f9";
+  const brushStroke = isDark ? "#475569" : "#cbd5e1";
+
   const [refAreaLeft, setRefAreaLeft] = useState<string>("");
   const [refAreaRight, setRefAreaRight] = useState<string>("");
   const [zoomLeft, setZoomLeft] = useState<string | null>(null);
@@ -166,11 +176,11 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
       : chartData;
 
     return (
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
+      <div className="bg-white border border-gray-200 dark:bg-slate-800/50 rounded-xl dark:border-slate-700/50 p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Values in Millions</p>
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200">{title}</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Values in Millions</p>
           </div>
           <ZoomControls isZoomed={!!(zoomLeft && zoomRight)} onReset={resetZoom} />
         </div>
@@ -182,11 +192,11 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
             onMouseMove={handleMouseMove}
             onMouseUp={() => handleMouseUp(allMonths)}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatMonth} axisLine={{ stroke: "#475569" }} minTickGap={30} />
-            <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12, color: "#94a3b8" }} />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+            <XAxis dataKey="month" tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatMonth} axisLine={{ stroke: axisColor }} minTickGap={30} />
+            <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
+            <Tooltip content={<CustomTooltip isDark={isDark} />} />
+            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12, color: tickColor }} />
             {multiLines.map((line) => (
               <Line
                 key={line.key}
@@ -195,7 +205,7 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
                 stroke={line.color}
                 strokeWidth={2.5}
                 dot={{ r: 3, strokeWidth: 0, fill: line.color }}
-                activeDot={{ r: 5, strokeWidth: 2, stroke: "#1e293b" }}
+                activeDot={{ r: 5, strokeWidth: 2, stroke: isDark ? "#1e293b" : "#ffffff" }}
                 name={line.label}
               />
             ))}
@@ -203,7 +213,7 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
               <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
             )}
             {!zoomLeft && (
-              <Brush dataKey="month" height={28} stroke="#475569" fill="#1e293b" tickFormatter={formatMonth} travellerWidth={10} />
+              <Brush dataKey="month" height={28} stroke={brushStroke} fill={brushFill} tickFormatter={formatMonth} travellerWidth={10} />
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -227,12 +237,14 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
     ? chartData.filter((d) => d.month >= zoomLeft && d.month <= zoomRight)
     : chartData;
 
+  const actualLineColor = isDark ? "#e2e8f0" : "#374151";
+
   return (
-    <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
+    <div className="bg-white border border-gray-200 dark:bg-slate-800/50 rounded-xl dark:border-slate-700/50 p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Values in Millions{unit ? ` (${unit})` : ""}</p>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200">{title}</h3>
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Values in Millions{unit ? ` (${unit})` : ""}</p>
         </div>
         <ZoomControls isZoomed={!!(zoomLeft && zoomRight)} onReset={resetZoom} />
       </div>
@@ -244,24 +256,24 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
           onMouseMove={handleMouseMove}
           onMouseUp={() => handleMouseUp(allMonths)}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-          <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatMonth} axisLine={{ stroke: "#475569" }} minTickGap={30} />
-          <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
-          <Tooltip content={<CustomTooltip />} />
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatMonth} axisLine={{ stroke: axisColor }} minTickGap={30} />
+          <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
+          <Tooltip content={<CustomTooltip isDark={isDark} />} />
           {hasCi && (
-            <Area dataKey="ciRange" stroke="none" fill="#60a5fa" fillOpacity={0.12} name="90% CI" type="monotone" />
+            <Area dataKey="ciRange" stroke="none" fill="#60a5fa" fillOpacity={isDark ? 0.12 : 0.15} name="90% CI" type="monotone" />
           )}
           {chartData.some((d) => d.actual !== undefined) && (
-            <Line type="monotone" dataKey="actual" stroke="#e2e8f0" strokeWidth={2} dot={{ r: 3, strokeWidth: 0, fill: "#e2e8f0" }} activeDot={{ r: 5, strokeWidth: 2, stroke: "#1e293b" }} name="Actual" />
+            <Line type="monotone" dataKey="actual" stroke={actualLineColor} strokeWidth={2} dot={{ r: 3, strokeWidth: 0, fill: actualLineColor }} activeDot={{ r: 5, strokeWidth: 2, stroke: isDark ? "#1e293b" : "#ffffff" }} name="Actual" />
           )}
           {chartData.some((d) => d.forecast !== undefined) && (
-            <Line type="monotone" dataKey="forecast" stroke="#60a5fa" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 0, fill: "#60a5fa" }} activeDot={{ r: 6, strokeWidth: 2, stroke: "#1e293b" }} name="Forecast" />
+            <Line type="monotone" dataKey="forecast" stroke="#60a5fa" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 0, fill: "#60a5fa" }} activeDot={{ r: 6, strokeWidth: 2, stroke: isDark ? "#1e293b" : "#ffffff" }} name="Forecast" />
           )}
           {refAreaLeft && refAreaRight && (
             <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
           )}
           {!zoomLeft && (
-            <Brush dataKey="month" height={28} stroke="#475569" fill="#1e293b" tickFormatter={formatMonth} travellerWidth={10} />
+            <Brush dataKey="month" height={28} stroke={brushStroke} fill={brushFill} tickFormatter={formatMonth} travellerWidth={10} />
           )}
         </ComposedChart>
       </ResponsiveContainer>

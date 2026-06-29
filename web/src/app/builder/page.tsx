@@ -153,29 +153,29 @@ export default function BuilderPage() {
     );
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-slate-500">Loading data...</div></div>;
-  if (error) return <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-6 text-center my-8"><p className="text-red-400 font-medium">Failed to load data</p><p className="text-red-500 text-sm mt-1">{error}</p></div>;
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-400 dark:text-slate-500">Loading data...</div></div>;
+  if (error) return <div className="bg-red-100 border border-red-300 dark:bg-red-900/30 dark:border-red-700/50 rounded-lg p-6 text-center my-8"><p className="text-red-700 dark:text-red-400 font-medium">Failed to load data</p><p className="text-red-500 text-sm mt-1">{error}</p></div>;
 
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Forecast Builder</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Select card type, date range, and level to build a custom forecast view</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Forecast Builder</h1>
+        <p className="text-sm text-gray-400 dark:text-slate-500 mt-0.5">Select card type, date range, and level to build a custom forecast view</p>
       </div>
 
       {/* Controls */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5 mb-6">
+      <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-5 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card Type */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Card type</label>
-            <div className="flex rounded-lg border border-slate-600 overflow-hidden">
+            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">Card type</label>
+            <div className="flex rounded-lg border border-gray-300 dark:border-slate-600 overflow-hidden">
               {(["CC", "DC"] as const).map((ct) => (
                 <button
                   key={ct}
                   onClick={() => { setCardType(ct); setSelectedBanks([]); }}
                   className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
-                    cardType === ct ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                    cardType === ct ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-700"
                   }`}
                 >
                   {ct === "CC" ? "Credit Card" : "Debit Card"}
@@ -186,14 +186,14 @@ export default function BuilderPage() {
 
           {/* View Level */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Level</label>
-            <div className="flex rounded-lg border border-slate-600 overflow-hidden">
+            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">Level</label>
+            <div className="flex rounded-lg border border-gray-300 dark:border-slate-600 overflow-hidden">
               {(["aggregate", "bank"] as const).map((lv) => (
                 <button
                   key={lv}
                   onClick={() => { setViewLevel(lv); if (lv === "aggregate") setSelectedBanks([]); }}
                   className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
-                    viewLevel === lv ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                    viewLevel === lv ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-700"
                   }`}
                 >
                   {lv === "aggregate" ? "Aggregate" : "Bank-level"}
@@ -204,40 +204,40 @@ export default function BuilderPage() {
 
           {/* From Date */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">From</label>
+            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">From</label>
             <input
               type="month"
               value={fmtMonthInput(fromMonth)}
               onChange={(e) => setFromMonth(e.target.value)}
               min={allMonths.length > 0 ? fmtMonthInput(allMonths[0]) : undefined}
               max={fmtMonthInput(toMonth)}
-              className="w-full border border-slate-600 rounded-lg px-3 py-2 text-sm bg-slate-800 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           {/* To Date */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">To</label>
+            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">To</label>
             <input
               type="month"
               value={fmtMonthInput(toMonth)}
               onChange={(e) => setToMonth(e.target.value)}
               min={fmtMonthInput(fromMonth)}
               max={allMonths.length > 0 ? fmtMonthInput(allMonths[allMonths.length - 1]) : undefined}
-              className="w-full border border-slate-600 rounded-lg px-3 py-2 text-sm bg-slate-800 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
 
         {/* Bank Selector */}
         {viewLevel === "bank" && (
-          <div className="mt-4 pt-4 border-t border-slate-700/50">
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-400">Select banks to compare</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Select banks to compare</label>
               <div className="flex gap-2">
-                <button onClick={() => setSelectedBanks([])} className="text-xs px-2.5 py-1 rounded-md bg-slate-700 text-slate-400 hover:bg-slate-600">Clear</button>
-                <button onClick={() => setSelectedBanks(banksForType.slice(0, 5))} className="text-xs px-2.5 py-1 rounded-md bg-slate-700 text-slate-400 hover:bg-slate-600">Top 5</button>
-                <button onClick={() => setSelectedBanks([...banksForType])} className="text-xs px-2.5 py-1 rounded-md bg-slate-700 text-slate-400 hover:bg-slate-600">All</button>
+                <button onClick={() => setSelectedBanks([])} className="text-xs px-2.5 py-1 rounded-md bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 hover:bg-gray-300 dark:hover:bg-slate-600">Clear</button>
+                <button onClick={() => setSelectedBanks(banksForType.slice(0, 5))} className="text-xs px-2.5 py-1 rounded-md bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 hover:bg-gray-300 dark:hover:bg-slate-600">Top 5</button>
+                <button onClick={() => setSelectedBanks([...banksForType])} className="text-xs px-2.5 py-1 rounded-md bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 hover:bg-gray-300 dark:hover:bg-slate-600">All</button>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -251,7 +251,7 @@ export default function BuilderPage() {
                     className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
                       isSelected
                         ? "text-white border-transparent"
-                        : "bg-slate-800 text-slate-400 border-slate-600 hover:border-slate-400"
+                        : "bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-300 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-400"
                     }`}
                     style={isSelected ? { backgroundColor: COLORS[colorIdx % COLORS.length] } : {}}
                   >
@@ -266,21 +266,21 @@ export default function BuilderPage() {
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-          <p className="text-xs text-slate-500">Card type</p>
-          <p className="text-lg font-bold text-white mt-0.5">{cardType === "CC" ? "Credit Card" : "Debit Card"}</p>
+        <div className="bg-white dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-700/50 p-4">
+          <p className="text-xs text-gray-400 dark:text-slate-500">Card type</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-white mt-0.5">{cardType === "CC" ? "Credit Card" : "Debit Card"}</p>
         </div>
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-          <p className="text-xs text-slate-500">Level</p>
-          <p className="text-lg font-bold text-white mt-0.5">{viewLevel === "aggregate" ? "India Aggregate" : `${selectedBanks.length} Bank${selectedBanks.length !== 1 ? "s" : ""}`}</p>
+        <div className="bg-white dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-700/50 p-4">
+          <p className="text-xs text-gray-400 dark:text-slate-500">Level</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-white mt-0.5">{viewLevel === "aggregate" ? "India Aggregate" : `${selectedBanks.length} Bank${selectedBanks.length !== 1 ? "s" : ""}`}</p>
         </div>
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-          <p className="text-xs text-slate-500">From</p>
-          <p className="text-lg font-bold text-white mt-0.5">{fmtMonth(fromMonth)}</p>
+        <div className="bg-white dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-700/50 p-4">
+          <p className="text-xs text-gray-400 dark:text-slate-500">From</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-white mt-0.5">{fmtMonth(fromMonth)}</p>
         </div>
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-          <p className="text-xs text-slate-500">To</p>
-          <p className="text-lg font-bold text-white mt-0.5">{fmtMonth(toMonth)}</p>
+        <div className="bg-white dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-700/50 p-4">
+          <p className="text-xs text-gray-400 dark:text-slate-500">To</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-white mt-0.5">{fmtMonth(toMonth)}</p>
         </div>
       </div>
 
@@ -299,25 +299,25 @@ export default function BuilderPage() {
             multiData={filteredBankChartData.multiData}
           />
         ) : (
-          <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-12 text-center">
-            <p className="text-slate-500">Select at least one bank above to see the chart</p>
+          <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-12 text-center">
+            <p className="text-gray-400 dark:text-slate-500">Select at least one bank above to see the chart</p>
           </div>
         )}
       </div>
 
       {/* Data Table */}
       {tableData.length > 0 && (
-        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-slate-200">Forecast Data</h3>
-              <p className="text-xs text-slate-500 mt-0.5">{tableData.length} rows — Values in Millions</p>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200">Forecast Data</h3>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{tableData.length} rows — Values in Millions</p>
             </div>
           </div>
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-slate-800">
-                <tr className="border-b border-slate-700 text-left text-slate-400">
+              <thead className="sticky top-0 bg-white dark:bg-slate-800">
+                <tr className="border-b border-gray-200 dark:border-slate-700 text-left text-gray-500 dark:text-slate-400">
                   <th className="pb-3 pr-4 font-medium">Month</th>
                   {viewLevel === "bank" && <th className="pb-3 pr-4 font-medium">Bank</th>}
                   <th className="pb-3 text-right font-medium">Forecast</th>
@@ -327,12 +327,12 @@ export default function BuilderPage() {
               </thead>
               <tbody>
                 {tableData.map((d, i) => (
-                  <tr key={i} className="border-b border-slate-700/50 last:border-0 hover:bg-slate-700/30">
-                    <td className="py-2.5 pr-4 text-slate-300">{fmtMonth(d.month)}</td>
-                    {viewLevel === "bank" && <td className="py-2.5 pr-4 text-slate-300 font-medium">{d.label}</td>}
-                    <td className="py-2.5 text-right font-medium text-white">{fmtM(d.value)}</td>
-                    <td className="py-2.5 text-right text-slate-400">{d.lower ? fmtM(d.lower) : "—"}</td>
-                    <td className="py-2.5 text-right text-slate-400">{d.upper ? fmtM(d.upper) : "—"}</td>
+                  <tr key={i} className="border-b border-gray-200 dark:border-slate-700/50 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-700/30">
+                    <td className="py-2.5 pr-4 text-gray-700 dark:text-slate-300">{fmtMonth(d.month)}</td>
+                    {viewLevel === "bank" && <td className="py-2.5 pr-4 text-gray-700 dark:text-slate-300 font-medium">{d.label}</td>}
+                    <td className="py-2.5 text-right font-medium text-gray-900 dark:text-white">{fmtM(d.value)}</td>
+                    <td className="py-2.5 text-right text-gray-500 dark:text-slate-400">{d.lower ? fmtM(d.lower) : "—"}</td>
+                    <td className="py-2.5 text-right text-gray-500 dark:text-slate-400">{d.upper ? fmtM(d.upper) : "—"}</td>
                   </tr>
                 ))}
               </tbody>

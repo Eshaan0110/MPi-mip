@@ -3,6 +3,11 @@
 @tailwind utilities;
 
 :root {
+  --foreground: #1e293b;
+  --background: #f9fafb;
+}
+
+.dark {
   --foreground: #e2e8f0;
   --background: #0f172a;
 }
@@ -15,9 +20,14 @@ body {
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
-/* Select dropdown dark */
-select option { background: #1e293b; color: #e2e8f0; }
+.dark ::-webkit-scrollbar-track { background: #1e293b; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Select dropdown */
+select option { background: #ffffff; color: #1e293b; }
+.dark select option { background: #1e293b; color: #e2e8f0; }
