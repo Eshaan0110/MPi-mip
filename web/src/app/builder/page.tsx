@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, isConfigured, CONFIG_ERROR_MESSAGE } from "@/lib/supabase";
 import { ForecastChart, COLORS } from "@/components/ForecastChart";
 import type { AggregateForecast, BankForecast } from "@/lib/types";
 
@@ -52,6 +52,7 @@ export default function BuilderPage() {
 
   useEffect(() => {
     async function load() {
+      if (!isConfigured) { setError(CONFIG_ERROR_MESSAGE); setLoading(false); return; }
       const [aggRes, bankRes] = await Promise.all([
         supabase.from("forecasts_aggregate").select("*").order("forecast_month", { ascending: true }),
         supabase.from("forecasts_bank").select("*").order("forecast_month", { ascending: true }),

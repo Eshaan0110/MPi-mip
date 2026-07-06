@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, isConfigured, CONFIG_ERROR_MESSAGE } from "@/lib/supabase";
 import { KpiCard } from "@/components/KpiCard";
 import { ForecastChart } from "@/components/ForecastChart";
 import { MonthSelector } from "@/components/MonthSelector";
@@ -30,6 +30,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
+      if (!isConfigured) { setError(CONFIG_ERROR_MESSAGE); setLoading(false); return; }
       const { data, error: err } = await supabase
         .from("forecasts_aggregate")
         .select("*")

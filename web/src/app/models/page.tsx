@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, isConfigured, CONFIG_ERROR_MESSAGE } from "@/lib/supabase";
 import type { ModelMetadata } from "@/lib/types";
 
 function accuracyFromMape(mape: number | null): number | null {
@@ -49,6 +49,7 @@ export default function ModelPerformancePage() {
 
   useEffect(() => {
     async function load() {
+      if (!isConfigured) { setError(CONFIG_ERROR_MESSAGE); setLoading(false); return; }
       const { data, error: err } = await supabase
         .from("model_metadata")
         .select("*")

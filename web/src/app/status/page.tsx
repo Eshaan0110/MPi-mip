@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, isConfigured, CONFIG_ERROR_MESSAGE } from "@/lib/supabase";
 import type { ScraperRun } from "@/lib/types";
 
 export default function DataStatusPage() {
@@ -11,6 +11,7 @@ export default function DataStatusPage() {
 
   useEffect(() => {
     async function load() {
+      if (!isConfigured) { setError(CONFIG_ERROR_MESSAGE); setLoading(false); return; }
       const { data, error: err } = await supabase
         .from("scraper_runs")
         .select("*")
