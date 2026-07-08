@@ -173,6 +173,82 @@ def sync_aggregate_forecasts(client):
     return 0
 
 
+def sync_aggregate_actuals(client):
+    """Sync historical (pre-forecast) aggregate actuals to processed_aggregate table.
+
+    Powers the "history + forecast" combined chart view on the dashboard.
+    """
+    logger.info("Syncing aggregate historical actuals...")
+
+    path = PROCESSED / "rbi_psi_cards.parquet"
+    if not path.exists():
+        logger.debug(f"  Skipping: {path.name} not found")
+        return 0
+
+    df = pd.read_parquet(path)
+
+    metric_cols = {
+        "cc_outstanding": "credit_cards_outstanding_lakh",
+        "dc_outstanding": "debit_cards_outstanding_lakh",
+    }
+
+    all_rows = []
+    for metric, col in metric_cols.items():
+        if col not in df.columns:
+            continue
+        for _, row in df.iterrows():
+            if pd.isna(row.get(col)):
+                continue
+            all_rows.append({
+                "metric": metric,
+                "month": str(row["date"])[:10],
+                "value": float(row[col]),
+            })
+
+    if all_rows:
+        df_all = pd.DataFrame(all_rows)
+        return upsert_df(client, "processed_aggregate", df_all, ["metric", "month"])
+    return 0
+
+
+def sync_bankwise_actuals(client):
+    """Sync historical (pre-forecast) per-bank actuals to processed_bank_series table.
+
+    Powers the "history + forecast" combined chart view in Bank Explorer.
+    """
+    logger.info("Syncing bank-level historical actuals...")
+
+    files = {
+        "CC": (PROCESSED / "bankwise_cards_cc.parquet", "cc_outstanding"),
+        "DC": (PROCESSED / "bankwise_cards_dc.parquet", "dc_outstanding"),
+    }
+
+    all_rows = []
+    for card_type, (path, value_col) in files.items():
+        if not path.exists():
+            logger.debug(f"  Skipping {card_type}: {path.name} not found")
+            continue
+
+        df = pd.read_parquet(path)
+        if value_col not in df.columns:
+            continue
+
+        for _, row in df.iterrows():
+            if pd.isna(row.get(value_col)):
+                continue
+            all_rows.append({
+                "bank_name": row["bank_name"],
+                "card_type": card_type,
+                "month": str(row["date"])[:10],
+                "y": float(row[value_col]),
+            })
+
+    if all_rows:
+        df_all = pd.DataFrame(all_rows)
+        return upsert_df(client, "processed_bank_series", df_all, ["bank_name", "card_type", "month"])
+    return 0
+
+
 def sync_raw_npci(client):
     """Sync NPCI UPI JSON data to raw_npci_upi table."""
     logger.info("Syncing NPCI UPI data...")
@@ -291,6 +367,8 @@ def main():
 
     total += sync_bankwise_forecasts(client)
     total += sync_aggregate_forecasts(client)
+    total += sync_aggregate_actuals(client)
+    total += sync_bankwise_actuals(client)
     total += sync_raw_npci(client)
     total += sync_model_metadata(client)
     total += seed_scraper_runs(client)

@@ -13,6 +13,7 @@ import {
   Legend,
   Brush,
   ReferenceArea,
+  ReferenceLine,
 } from "recharts";
 import { useTheme } from "./ThemeProvider";
 
@@ -35,6 +36,8 @@ interface ForecastChartProps {
   unit?: string;
   multiLines?: { key: string; label: string; color: string }[];
   multiData?: MultiLinePoint[];
+  /** Month (matching a data point's `month`) to mark with a vertical guide line — ties the chart to an external date picker. */
+  highlightMonth?: string;
 }
 
 const COLORS = [
@@ -107,7 +110,7 @@ function ZoomControls({ isZoomed, onReset }: { isZoomed: boolean; onReset: () =>
   );
 }
 
-export function ForecastChart({ data, title, unit, multiLines, multiData }: ForecastChartProps) {
+export function ForecastChart({ data, title, unit, multiLines, multiData, highlightMonth }: ForecastChartProps) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -116,6 +119,7 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
   const axisColor = isDark ? "#475569" : "#cbd5e1";
   const brushFill = isDark ? "#1e293b" : "#f1f5f9";
   const brushStroke = isDark ? "#475569" : "#cbd5e1";
+  const highlightColor = isDark ? "#fbbf24" : "#d97706";
 
   const [refAreaLeft, setRefAreaLeft] = useState<string>("");
   const [refAreaRight, setRefAreaRight] = useState<string>("");
@@ -194,7 +198,7 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
           >
             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
             <XAxis dataKey="month" tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatMonth} axisLine={{ stroke: axisColor }} minTickGap={30} />
-            <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
+            <YAxis domain={["auto", "auto"]} tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
             <Tooltip content={<CustomTooltip isDark={isDark} />} />
             <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12, color: tickColor }} />
             {multiLines.map((line) => (
@@ -211,6 +215,9 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
             ))}
             {refAreaLeft && refAreaRight && (
               <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
+            )}
+            {highlightMonth && filteredData.some((d: any) => d.month === highlightMonth) && (
+              <ReferenceLine x={highlightMonth} stroke={highlightColor} strokeDasharray="4 4" strokeWidth={1.5} />
             )}
             {!zoomLeft && (
               <Brush dataKey="month" height={28} stroke={brushStroke} fill={brushFill} tickFormatter={formatMonth} travellerWidth={10} />
@@ -258,7 +265,7 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
         >
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="month" tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatMonth} axisLine={{ stroke: axisColor }} minTickGap={30} />
-          <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
+          <YAxis domain={["auto", "auto"]} tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
           <Tooltip content={<CustomTooltip isDark={isDark} />} />
           {hasCi && (
             <Area dataKey="ciRange" stroke="none" fill="#60a5fa" fillOpacity={isDark ? 0.12 : 0.15} name="90% CI" type="monotone" />
@@ -271,6 +278,9 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
           )}
           {refAreaLeft && refAreaRight && (
             <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
+          )}
+          {highlightMonth && filteredData.some((d) => d.month === highlightMonth) && (
+            <ReferenceLine x={highlightMonth} stroke={highlightColor} strokeDasharray="4 4" strokeWidth={1.5} />
           )}
           {!zoomLeft && (
             <Brush dataKey="month" height={28} stroke={brushStroke} fill={brushFill} tickFormatter={formatMonth} travellerWidth={10} />

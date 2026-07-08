@@ -102,16 +102,16 @@ export default function DashboardPage() {
         <KpiCard title="Debit Cards" value={dcOutstanding ? fmtM(toM(dcOutstanding.yhat)) : "—"} subtitle="Outstanding" />
         <KpiCard title="UPI Transactions" value={upiVol ? fmtM(toM(upiVol.yhat), 0) : "—"} subtitle="Monthly volume" />
         <KpiCard
-          title="CC New Cards"
+          title="CC Net New Cards (Est.)"
           value={ccManufacture !== null ? (ccManufacture >= 0 ? "+" : "") + fmtM(toM(ccManufacture), 2) : "—"}
-          subtitle="To manufacture (MoM)"
+          subtitle="MoM outstanding proxy — excl. cancellations/renewals"
           trend={ccManufacture !== null ? (ccManufacture >= 0 ? "Growth" : "Decline") : undefined}
           trendUp={ccManufacture !== null ? ccManufacture >= 0 : undefined}
         />
         <KpiCard
-          title="DC New Cards"
+          title="DC Net New Cards (Est.)"
           value={dcManufacture !== null ? (dcManufacture >= 0 ? "+" : "") + fmtM(toM(dcManufacture), 2) : "—"}
-          subtitle="To manufacture (MoM)"
+          subtitle="MoM outstanding proxy — excl. cancellations/renewals"
           trend={dcManufacture !== null ? (dcManufacture >= 0 ? "Growth" : "Decline") : undefined}
           trendUp={dcManufacture !== null ? dcManufacture >= 0 : undefined}
         />

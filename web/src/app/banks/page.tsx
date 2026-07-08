@@ -5,10 +5,14 @@ import { supabase, isConfigured, CONFIG_ERROR_MESSAGE } from "@/lib/supabase";
 import { KpiCard } from "@/components/KpiCard";
 import { ForecastChart, COLORS } from "@/components/ForecastChart";
 import { MonthSelector } from "@/components/MonthSelector";
-import type { BankForecast } from "@/lib/types";
+import type { BankForecast, ProcessedBankSeries } from "@/lib/types";
 
 function toM(v: number): number { return v / 1_000_000; }
 function fmtM(n: number, decimals = 1): string { return n.toFixed(decimals) + " M"; }
+
+function fmtMonthInput(m: string): string {
+  return m.length >= 7 ? m.substring(0, 7) : m;
+}
 
 const ALLOWED_CC_BANKS = new Set([
   "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
@@ -37,8 +41,11 @@ function formatDate(m: string): string {
 
 export default function BankExplorerPage() {
   const [forecasts, setForecasts] = useState<BankForecast[]>([]);
+  const [actuals, setActuals] = useState<ProcessedBankSeries[]>([]);
   const [months, setMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState("");
+  const [fromMonth, setFromMonth] = useState("");
+  const [toMonth, setToMonth] = useState("");
   const [cardType, setCardType] = useState<"CC" | "DC">("CC");
   const [selectedBanks, setSelectedBanks] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,17 +55,25 @@ export default function BankExplorerPage() {
   useEffect(() => {
     async function load() {
       if (!isConfigured) { setError(CONFIG_ERROR_MESSAGE); setLoading(false); return; }
-      const { data, error: err } = await supabase
-        .from("forecasts_bank")
-        .select("*")
-        .order("forecast_month", { ascending: true });
+      const [forecastRes, actualRes] = await Promise.all([
+        supabase.from("forecasts_bank").select("*").order("forecast_month", { ascending: true }),
+        supabase.from("processed_bank_series").select("*").order("month", { ascending: true }),
+      ]);
 
-      if (err) { setError(err.message); setLoading(false); return; }
+      if (forecastRes.error) { setError(forecastRes.error.message); setLoading(false); return; }
+      const data = forecastRes.data;
+      if (actualRes.data) setActuals(actualRes.data);
       if (data) {
         setForecasts(data);
         const uniqueMonths = [...new Set(data.map((d) => d.forecast_month))].sort();
         setMonths(uniqueMonths);
         if (uniqueMonths.length > 0) setSelectedMonth(uniqueMonths[uniqueMonths.length - 1]);
+        const historyMonths = actualRes.data ? actualRes.data.map((d) => d.month) : [];
+        const allAvailable = [...uniqueMonths, ...historyMonths].sort();
+        if (allAvailable.length > 0) {
+          setFromMonth(allAvailable[0]);
+          setToMonth(allAvailable[allAvailable.length - 1]);
+        }
         const ccBanks = [...new Set(data.filter((d) => d.card_type === "CC").map((d) => d.bank_name))].filter((b) => ALLOWED_CC_BANKS.has(b)).sort();
         if (ccBanks.length > 0) setSelectedBanks([ccBanks[0]]);
       }
@@ -92,18 +107,32 @@ export default function BankExplorerPage() {
 
   const primaryBank = selectedBanks[0] || "";
   const RAW_TO_LAKH = 1 / 100_000;
-  const bankChartData = forecasts
-    .filter((f) => f.bank_name === primaryBank && f.card_type === cardType)
-    .map((f) => ({
-      month: f.forecast_month,
-      forecast: f.yhat * RAW_TO_LAKH,
-      lower: f.yhat_lower != null ? f.yhat_lower * RAW_TO_LAKH : undefined,
-      upper: f.yhat_upper != null ? f.yhat_upper * RAW_TO_LAKH : undefined,
-    }));
+  const inRange = (m: string) => (!fromMonth || m >= fromMonth) && (!toMonth || m <= toMonth);
+
+  const bankChartMap = new Map<string, { actual?: number; forecast?: number; lower?: number; upper?: number }>();
+  for (const a of actuals) {
+    if (a.bank_name === primaryBank && a.card_type === cardType) {
+      bankChartMap.set(a.month, { ...bankChartMap.get(a.month), actual: a.y * RAW_TO_LAKH });
+    }
+  }
+  for (const f of forecasts) {
+    if (f.bank_name === primaryBank && f.card_type === cardType) {
+      bankChartMap.set(f.forecast_month, {
+        ...bankChartMap.get(f.forecast_month),
+        forecast: f.yhat * RAW_TO_LAKH,
+        lower: f.yhat_lower != null ? f.yhat_lower * RAW_TO_LAKH : undefined,
+        upper: f.yhat_upper != null ? f.yhat_upper * RAW_TO_LAKH : undefined,
+      });
+    }
+  }
+  const bankChartData = [...bankChartMap.entries()]
+    .filter(([month]) => inRange(month))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, v]) => ({ month, ...v }));
 
   const allMonthsForType = [...new Set(
     forecasts.filter((f) => f.card_type === cardType && selectedBanks.includes(f.bank_name)).map((f) => f.forecast_month)
-  )].sort();
+  )].filter(inRange).sort();
 
   const multiData = allMonthsForType.map((m) => {
     const row: any = { month: m };
@@ -154,7 +183,33 @@ export default function BankExplorerPage() {
             <button onClick={() => setTab("compare")}
               className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "compare" ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-700"}`}>Compare Banks</button>
           </div>
-          <MonthSelector months={months} selected={selectedMonth} onChange={setSelectedMonth} />
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-gray-400 dark:text-slate-500">As of</label>
+            <MonthSelector months={months} selected={selectedMonth} onChange={setSelectedMonth} />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-end gap-3 flex-wrap mb-6">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">Chart range — from</label>
+          <input
+            type="month"
+            value={fmtMonthInput(fromMonth)}
+            onChange={(e) => setFromMonth(e.target.value)}
+            max={fmtMonthInput(toMonth)}
+            className="border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">to</label>
+          <input
+            type="month"
+            value={fmtMonthInput(toMonth)}
+            onChange={(e) => setToMonth(e.target.value)}
+            min={fmtMonthInput(fromMonth)}
+            className="border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
       </div>
 
@@ -194,16 +249,16 @@ export default function BankExplorerPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <KpiCard title="Forecast" value={fmtM(toM(primaryData.yhat))} subtitle={displayBank(primaryBank)} />
           <KpiCard title="90% CI Range" value={primaryData.yhat_lower && primaryData.yhat_upper ? `${fmtM(toM(primaryData.yhat_lower))} – ${fmtM(toM(primaryData.yhat_upper))}` : "—"} />
-          <KpiCard title="Cards to Manufacture" value={primaryManufacture !== null ? (primaryManufacture >= 0 ? "+" : "") + fmtM(toM(primaryManufacture), 2) : "—"} subtitle="Net new cards (MoM)" trend={primaryManufacture !== null ? (primaryManufacture >= 0 ? "Growth" : "Decline") : undefined} trendUp={primaryManufacture !== null ? primaryManufacture >= 0 : undefined} />
+          <KpiCard title="Net New Cards (Est.)" value={primaryManufacture !== null ? (primaryManufacture >= 0 ? "+" : "") + fmtM(toM(primaryManufacture), 2) : "—"} subtitle="MoM outstanding proxy — excl. cancellations/renewals" trend={primaryManufacture !== null ? (primaryManufacture >= 0 ? "Growth" : "Decline") : undefined} trendUp={primaryManufacture !== null ? primaryManufacture >= 0 : undefined} />
           <KpiCard title="Model" value={primaryData.model_type || "Prophet"} subtitle="Forecast method" />
         </div>
       )}
 
       <div className="mb-6">
         {tab === "single" ? (
-          <ForecastChart data={bankChartData} title={`${displayBank(primaryBank)} — ${cardType === "CC" ? "Credit Card" : "Debit Card"} Forecast`} />
+          <ForecastChart data={bankChartData} title={`${displayBank(primaryBank)} — ${cardType === "CC" ? "Credit Card" : "Debit Card"} History & Forecast`} highlightMonth={selectedMonth} />
         ) : selectedBanks.length > 0 ? (
-          <ForecastChart data={[]} title={`Bank Comparison — ${cardType === "CC" ? "Credit Card" : "Debit Card"} Outstanding`} multiLines={multiLines} multiData={multiData} />
+          <ForecastChart data={[]} title={`Bank Comparison — ${cardType === "CC" ? "Credit Card" : "Debit Card"} Outstanding`} multiLines={multiLines} multiData={multiData} highlightMonth={selectedMonth} />
         ) : (
           <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-12 text-center"><p className="text-gray-400 dark:text-slate-500">Select at least one bank to see the chart</p></div>
         )}
@@ -220,7 +275,7 @@ export default function BankExplorerPage() {
                 <th className="pb-3 font-medium">Bank</th>
                 <th className="pb-3 text-right font-medium">Forecast</th>
                 <th className="pb-3 text-right font-medium">90% CI</th>
-                <th className="pb-3 text-right font-medium">New Cards (MoM)</th>
+                <th className="pb-3 text-right font-medium">Net New Cards (Est.)</th>
                 <th className="pb-3 text-right font-medium">Model</th>
               </tr>
             </thead>
