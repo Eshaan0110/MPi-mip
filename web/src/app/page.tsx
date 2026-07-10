@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { KpiCard } from "@/components/KpiCard";
 import { ForecastChart } from "@/components/ForecastChart";
 import { MonthSelector } from "@/components/MonthSelector";
-import type { AggregateForecast } from "@/lib/types";
+import type { AggregateForecast, ProcessedAggregate } from "@/lib/types";
 
 function toM(lakh: number): number {
   return lakh / 10;
@@ -23,6 +23,7 @@ function formatDate(m: string): string {
 
 export default function DashboardPage() {
   const [forecasts, setForecasts] = useState<AggregateForecast[]>([]);
+  const [actuals, setActuals] = useState<ProcessedAggregate[]>([]);
   const [months, setMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -30,19 +31,20 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const { data, error: err } = await supabase
-        .from("forecasts_aggregate")
-        .select("*")
-        .order("forecast_month", { ascending: true });
+      const [fcRes, actRes] = await Promise.all([
+        supabase.from("forecasts_aggregate").select("*").order("forecast_month", { ascending: true }),
+        supabase.from("processed_aggregate").select("*").order("month", { ascending: true }),
+      ]);
 
-      if (err) { setError(err.message); setLoading(false); return; }
-      if (data) {
-        setForecasts(data);
-        const uniqueMonths = [...new Set(data.map((d) => d.forecast_month))].sort();
+      if (fcRes.error) { setError(fcRes.error.message); setLoading(false); return; }
+      if (fcRes.data) {
+        setForecasts(fcRes.data);
+        const uniqueMonths = [...new Set(fcRes.data.map((d) => d.forecast_month))].sort();
         setMonths(uniqueMonths);
         if (uniqueMonths.length > 1) setSelectedMonth(uniqueMonths[1]);
         else if (uniqueMonths.length > 0) setSelectedMonth(uniqueMonths[0]);
       }
+      if (actRes.data) setActuals(actRes.data);
       setLoading(false);
     }
     load();
@@ -71,12 +73,28 @@ export default function DashboardPage() {
   const ccManufacture = ccOutstanding && ccPrev ? ccOutstanding.yhat - ccPrev.yhat : null;
   const dcManufacture = dcOutstanding && dcPrev ? dcOutstanding.yhat - dcPrev.yhat : null;
 
-  const ccChartData = forecasts.filter((f) => f.metric === "cc_outstanding").map((f) => ({
-    month: f.forecast_month, forecast: f.yhat, lower: f.yhat_lower ?? undefined, upper: f.yhat_upper ?? undefined,
-  }));
-  const dcChartData = forecasts.filter((f) => f.metric === "dc_outstanding").map((f) => ({
-    month: f.forecast_month, forecast: f.yhat, lower: f.yhat_lower ?? undefined, upper: f.yhat_upper ?? undefined,
-  }));
+  function buildChartData(metric: string) {
+    const forecastByMonth = new Map(
+      forecasts.filter((f) => f.metric === metric).map((f) => [f.forecast_month, f])
+    );
+    const actualByMonth = new Map(
+      actuals.filter((a) => a.metric === metric).map((a) => [a.month, a])
+    );
+    const allMonths = [...new Set([...forecastByMonth.keys(), ...actualByMonth.keys()])].sort();
+    return allMonths.map((m) => {
+      const fc = forecastByMonth.get(m);
+      const act = actualByMonth.get(m);
+      return {
+        month: m,
+        actual: act ? act.value : undefined,
+        forecast: fc ? fc.yhat : undefined,
+        lower: fc?.yhat_lower ?? undefined,
+        upper: fc?.yhat_upper ?? undefined,
+      };
+    });
+  }
+  const ccChartData = buildChartData("cc_outstanding");
+  const dcChartData = buildChartData("dc_outstanding");
 
   const METRIC_LABELS: Record<string, string> = {
     cc_outstanding: "Credit Card Outstanding",
@@ -101,24 +119,24 @@ export default function DashboardPage() {
         <KpiCard title="Debit Cards" value={dcOutstanding ? fmtM(toM(dcOutstanding.yhat)) : "—"} subtitle="Outstanding" />
         <KpiCard title="UPI Transactions" value={upiVol ? fmtM(toM(upiVol.yhat), 0) : "—"} subtitle="Monthly volume" />
         <KpiCard
-          title="CC New Cards"
+          title="CC Net New Cards (Est.)"
           value={ccManufacture !== null ? (ccManufacture >= 0 ? "+" : "") + fmtM(toM(ccManufacture), 2) : "—"}
-          subtitle="To manufacture (MoM)"
+          subtitle="MoM change in outstanding"
           trend={ccManufacture !== null ? (ccManufacture >= 0 ? "Growth" : "Decline") : undefined}
           trendUp={ccManufacture !== null ? ccManufacture >= 0 : undefined}
         />
         <KpiCard
-          title="DC New Cards"
+          title="DC Net New Cards (Est.)"
           value={dcManufacture !== null ? (dcManufacture >= 0 ? "+" : "") + fmtM(toM(dcManufacture), 2) : "—"}
-          subtitle="To manufacture (MoM)"
+          subtitle="MoM change in outstanding"
           trend={dcManufacture !== null ? (dcManufacture >= 0 ? "Growth" : "Decline") : undefined}
           trendUp={dcManufacture !== null ? dcManufacture >= 0 : undefined}
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <ForecastChart data={ccChartData} title="Credit Cards Outstanding" />
-        <ForecastChart data={dcChartData} title="Debit Cards Outstanding" />
+        <ForecastChart data={ccChartData} title="Credit Cards Outstanding" highlightMonth={selectedMonth} />
+        <ForecastChart data={dcChartData} title="Debit Cards Outstanding" highlightMonth={selectedMonth} />
       </div>
 
       <div className="bg-white border border-gray-200 dark:bg-slate-800/50 rounded-xl dark:border-slate-700/50 p-6">
