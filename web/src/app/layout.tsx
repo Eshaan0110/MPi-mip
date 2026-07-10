@@ -14,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body className="min-h-screen flex flex-col bg-gray-50 text-gray-800 dark:bg-[#0f172a] dark:text-slate-200 transition-colors duration-200">
         <ThemeProvider>
           <NavBar />
