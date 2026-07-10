@@ -199,6 +199,82 @@ def sync_raw_npci(client):
     return 0
 
 
+def sync_processed_aggregate(client):
+    """Sync aggregate historical series to processed_aggregate table."""
+    logger.info("Syncing processed aggregate data...")
+    all_rows = []
+
+    psi_path = PROCESSED / "rbi_psi_cards.parquet"
+    if not psi_path.exists():
+        logger.debug("  No rbi_psi_cards.parquet found")
+        return 0
+
+    psi = pd.read_parquet(psi_path)
+    psi["date"] = pd.to_datetime(psi["date"]).dt.to_period("M").dt.to_timestamp()
+
+    metric_map = {
+        "credit_cards_outstanding_lakh": "cc_outstanding",
+        "debit_cards_outstanding_lakh": "dc_outstanding",
+    }
+
+    for col, metric in metric_map.items():
+        if col not in psi.columns:
+            continue
+        for _, row in psi.iterrows():
+            if pd.isna(row[col]):
+                continue
+            all_rows.append({
+                "metric": metric,
+                "month": str(row["date"])[:10],
+                "value": float(row[col]),
+            })
+
+    if all_rows:
+        df_all = pd.DataFrame(all_rows)
+        if not DRY_RUN:
+            logger.info("  Clearing old processed_aggregate rows...")
+            client.table("processed_aggregate").delete().neq("id", 0).execute()
+        return upsert_df(client, "processed_aggregate", df_all, ["metric", "month"])
+    return 0
+
+
+def sync_processed_bank_series(client):
+    """Sync bankwise historical series to processed_bank_series table."""
+    logger.info("Syncing processed bank series...")
+    all_rows = []
+
+    for card_type in ["cc", "dc"]:
+        path = PROCESSED / f"bankwise_cards_{card_type}.parquet"
+        if not path.exists():
+            logger.debug(f"  No bankwise_cards_{card_type}.parquet found")
+            continue
+
+        df = pd.read_parquet(path)
+        df["date"] = pd.to_datetime(df["date"]).dt.to_period("M").dt.to_timestamp()
+        target_col = f"{card_type}_outstanding"
+
+        if target_col not in df.columns:
+            continue
+
+        for _, row in df.iterrows():
+            if pd.isna(row.get(target_col)):
+                continue
+            all_rows.append({
+                "bank_name": row["bank_name"],
+                "card_type": card_type.upper(),
+                "month": str(row["date"])[:10],
+                "y": float(row[target_col]),
+            })
+
+    if all_rows:
+        df_all = pd.DataFrame(all_rows)
+        if not DRY_RUN:
+            logger.info("  Clearing old processed_bank_series rows...")
+            client.table("processed_bank_series").delete().neq("id", 0).execute()
+        return upsert_df(client, "processed_bank_series", df_all, ["bank_name", "card_type", "month"])
+    return 0
+
+
 def sync_model_metadata(client):
     """Sync per-bank CV MAPE from local CSV summaries + aggregate MAPE to model_metadata."""
     logger.info("Syncing model metadata...")
@@ -291,6 +367,8 @@ def main():
 
     total += sync_bankwise_forecasts(client)
     total += sync_aggregate_forecasts(client)
+    total += sync_processed_aggregate(client)
+    total += sync_processed_bank_series(client)
     total += sync_raw_npci(client)
     total += sync_model_metadata(client)
     total += seed_scraper_runs(client)
