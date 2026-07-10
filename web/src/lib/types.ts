@@ -17,6 +17,19 @@ export interface AggregateForecast {
   model_type: string | null;
 }
 
+export interface ProcessedAggregate {
+  metric: string;
+  month: string;
+  value: number;
+}
+
+export interface ProcessedBankSeries {
+  bank_name: string;
+  card_type: "CC" | "DC";
+  month: string;
+  y: number;
+}
+
 export interface ModelMetadata {
   bank_name: string | null;
   card_type: string | null;
