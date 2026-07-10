@@ -13,6 +13,7 @@ import {
   Legend,
   Brush,
   ReferenceArea,
+  ReferenceLine,
 } from "recharts";
 import { useTheme } from "./ThemeProvider";
 
@@ -33,6 +34,7 @@ interface ForecastChartProps {
   data: DataPoint[];
   title: string;
   unit?: string;
+  highlightMonth?: string;
   multiLines?: { key: string; label: string; color: string }[];
   multiData?: MultiLinePoint[];
 }
@@ -107,7 +109,7 @@ function ZoomControls({ isZoomed, onReset }: { isZoomed: boolean; onReset: () =>
   );
 }
 
-export function ForecastChart({ data, title, unit, multiLines, multiData }: ForecastChartProps) {
+export function ForecastChart({ data, title, unit, highlightMonth, multiLines, multiData }: ForecastChartProps) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -194,7 +196,7 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
           >
             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
             <XAxis dataKey="month" tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatMonth} axisLine={{ stroke: axisColor }} minTickGap={30} />
-            <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
+            <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} domain={["auto", "auto"]} />
             <Tooltip content={<CustomTooltip isDark={isDark} />} />
             <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12, color: tickColor }} />
             {multiLines.map((line) => (
@@ -209,6 +211,9 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
                 name={line.label}
               />
             ))}
+            {highlightMonth && (
+              <ReferenceLine x={highlightMonth} stroke={isDark ? "#fbbf24" : "#d97706"} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: formatMonth(highlightMonth), position: "top", fill: isDark ? "#fbbf24" : "#d97706", fontSize: 11 }} />
+            )}
             {refAreaLeft && refAreaRight && (
               <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
             )}
@@ -258,7 +263,7 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
         >
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="month" tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatMonth} axisLine={{ stroke: axisColor }} minTickGap={30} />
-          <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} />
+          <YAxis tick={{ fontSize: 12, fill: tickColor }} tickFormatter={formatAxisTick} axisLine={false} tickLine={false} width={65} domain={["auto", "auto"]} />
           <Tooltip content={<CustomTooltip isDark={isDark} />} />
           {hasCi && (
             <Area dataKey="ciRange" stroke="none" fill="#60a5fa" fillOpacity={isDark ? 0.12 : 0.15} name="90% CI" type="monotone" />
@@ -268,6 +273,9 @@ export function ForecastChart({ data, title, unit, multiLines, multiData }: Fore
           )}
           {chartData.some((d) => d.forecast !== undefined) && (
             <Line type="monotone" dataKey="forecast" stroke="#60a5fa" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 0, fill: "#60a5fa" }} activeDot={{ r: 6, strokeWidth: 2, stroke: isDark ? "#1e293b" : "#ffffff" }} name="Forecast" />
+          )}
+          {highlightMonth && (
+            <ReferenceLine x={highlightMonth} stroke={isDark ? "#fbbf24" : "#d97706"} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: formatMonth(highlightMonth), position: "top", fill: isDark ? "#fbbf24" : "#d97706", fontSize: 11 }} />
           )}
           {refAreaLeft && refAreaRight && (
             <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#60a5fa" fillOpacity={0.15} />
