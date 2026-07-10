@@ -8,6 +8,7 @@ const links = [
   { href: "/", label: "Dashboard" },
   { href: "/banks", label: "Bank Explorer" },
   { href: "/builder", label: "Builder" },
+  { href: "/pipeline", label: "Run Pipeline" },
   { href: "/status", label: "Data Status" },
   { href: "/models", label: "Model Performance" },
   { href: "/about", label: "About" },
