@@ -183,11 +183,18 @@ BANKS_NEEDING_CAPS: set[tuple[str, str]] = {
 
 
 def compute_dynamic_cap(bank_df: "pd.DataFrame", bank_name: str, card_type: str) -> float | None:
-    """Compute cap dynamically from recent data. Returns None if bank doesn't need a cap."""
-    import pandas as pd
+    """Compute cap dynamically from recent data. Returns raw-scale value.
+
+    When USE_LOG_TRANSFORM is True, bank_df["y"] is log1p-transformed.
+    We back-transform to raw scale before computing the cap so the caller
+    can apply log1p() without double-transforming.
+    """
+    import numpy as np
     if (bank_name, card_type) not in BANKS_NEEDING_CAPS:
         return None
     y = bank_df["y"].values
+    if USE_LOG_TRANSFORM:
+        y = np.expm1(y)
     last = y[-1]
     if len(y) >= 12:
         trailing_growth = y[-1] - y[-13]
