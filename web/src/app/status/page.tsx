@@ -4,20 +4,32 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { ScraperRun } from "@/lib/types";
 
+interface PipelineRun {
+  id: string;
+  triggered_by: string;
+  started_at: string;
+  completed_at: string | null;
+  status: string;
+  steps_completed: number;
+  steps_failed: number;
+  summary_json: Record<string, unknown> | null;
+}
+
 export default function DataStatusPage() {
   const [runs, setRuns] = useState<ScraperRun[]>([]);
+  const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const { data, error: err } = await supabase
-        .from("scraper_runs")
-        .select("*")
-        .order("started_at", { ascending: false })
-        .limit(50);
-      if (err) { setError(err.message); setLoading(false); return; }
-      if (data) setRuns(data);
+      const [scraperRes, pipelineRes] = await Promise.all([
+        supabase.from("scraper_runs").select("*").order("started_at", { ascending: false }).limit(50),
+        supabase.from("pipeline_runs").select("*").order("started_at", { ascending: false }).limit(20),
+      ]);
+      if (scraperRes.error) { setError(scraperRes.error.message); setLoading(false); return; }
+      if (scraperRes.data) setRuns(scraperRes.data);
+      if (pipelineRes.data) setPipelineRuns(pipelineRes.data);
       setLoading(false);
     }
     load();
@@ -97,6 +109,40 @@ export default function DataStatusPage() {
                     <td className="py-3 text-right text-gray-500 dark:text-slate-400">{r.files_downloaded}</td>
                     <td className="py-3 text-right text-gray-500 dark:text-slate-400">{r.records_written}</td>
                     <td className="py-3 text-gray-400 dark:text-slate-500 text-xs truncate max-w-xs">{r.error_message || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {/* Pipeline Audit Trail */}
+      <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-6 mt-8">
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-4">Pipeline Audit Trail</h3>
+        {pipelineRuns.length === 0 ? (
+          <p className="text-gray-400 dark:text-slate-500 text-sm">No pipeline runs recorded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-slate-700 text-left text-gray-500 dark:text-slate-400">
+                  <th className="pb-3 font-medium">Triggered By</th>
+                  <th className="pb-3 font-medium">Status</th>
+                  <th className="pb-3 font-medium">Started</th>
+                  <th className="pb-3 font-medium">Completed</th>
+                  <th className="pb-3 text-right font-medium">Steps OK</th>
+                  <th className="pb-3 text-right font-medium">Steps Failed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pipelineRuns.map((r) => (
+                  <tr key={r.id} className="border-b border-gray-200 dark:border-slate-700/50 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-700/30">
+                    <td className="py-3 font-medium text-gray-800 dark:text-slate-200 capitalize">{r.triggered_by}</td>
+                    <td className="py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor(r.status)}`}>{r.status}</span></td>
+                    <td className="py-3 text-gray-500 dark:text-slate-400">{new Date(r.started_at).toLocaleString("en-IN")}</td>
+                    <td className="py-3 text-gray-500 dark:text-slate-400">{r.completed_at ? new Date(r.completed_at).toLocaleString("en-IN") : "—"}</td>
+                    <td className="py-3 text-right text-gray-500 dark:text-slate-400">{r.steps_completed}</td>
+                    <td className="py-3 text-right text-gray-500 dark:text-slate-400">{r.steps_failed}</td>
                   </tr>
                 ))}
               </tbody>
