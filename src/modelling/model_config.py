@@ -32,7 +32,7 @@ PROPHET_BASE = {
 CV_CONFIG = {
     "initial":  "1461 days",   # 48 months ≈ 4 years
     "period":   "182 days",    # 6-month step
-    "horizon":  "182 days",    # 6-month horizon
+    "horizon":  "365 days",    # 12-month horizon (extended for longer-range accuracy)
     "parallel": "processes",   # use multiprocessing for speed
 }
 
