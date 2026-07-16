@@ -380,6 +380,67 @@ def _run_ets_cv(
     }
 
 
+def _build_bank_conformal_ci(
+    bank_df: pd.DataFrame,
+    card_type: str,
+    horizon: int,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Build conformal 90% CI from walk-forward ETS residuals on original scale.
+
+    Returns (lower_widths, upper_widths) arrays of length `horizon`,
+    or None if insufficient data. Widths are signed: lower is negative.
+    """
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    from src.modelling.bank_config import USE_LOG_TRANSFORM
+
+    initial = 36
+    step = 6
+    y_all = bank_df["y"].values
+    n = len(y_all)
+
+    if n < initial + horizon:
+        return None
+
+    residuals_by_step: dict[int, list[float]] = {h: [] for h in range(horizon)}
+
+    start = initial
+    while start + horizon <= n:
+        y_train = y_all[:start]
+        y_test = y_all[start:start + horizon]
+        try:
+            m = ExponentialSmoothing(
+                y_train, trend="add", seasonal="add", seasonal_periods=12,
+                initialization_method="heuristic",
+            )
+            fit = m.fit(optimized=True)
+            pred = fit.forecast(horizon)
+
+            if USE_LOG_TRANSFORM:
+                actual = np.expm1(y_test)
+                predicted = np.expm1(pred)
+            else:
+                actual = y_test
+                predicted = pred
+
+            for h in range(horizon):
+                residuals_by_step[h].append(actual[h] - predicted[h])
+        except Exception:
+            pass
+        start += step
+
+    lower = np.zeros(horizon)
+    upper = np.zeros(horizon)
+    for h in range(horizon):
+        resids = residuals_by_step.get(h, [])
+        if len(resids) >= 3:
+            lower[h] = np.percentile(resids, 5)
+            upper[h] = np.percentile(resids, 95)
+        else:
+            return None
+
+    return lower, upper
+
+
 def _forecast_bank(
     model,
     bank_df: pd.DataFrame,
@@ -444,6 +505,14 @@ def _forecast_bank(
     fc["bank_name"] = bank_name
     fc["card_type"] = card_type
 
+    # Override default CIs with conformal intervals when available
+    conformal = _build_bank_conformal_ci(bank_df, card_type, len(fc))
+    if conformal is not None:
+        lower_w, upper_w = conformal
+        fc["forecast_lower"] = fc["forecast"] + lower_w[:len(fc)]
+        fc["forecast_upper"] = fc["forecast"] + upper_w[:len(fc)]
+        logger.debug(f"    Conformal CI applied for {bank_name}")
+
     # Full historical fit + forecast (for dashboard)
     full = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
     full.columns = ["date", "yhat", "yhat_lower", "yhat_upper"]
@@ -454,6 +523,14 @@ def _forecast_bank(
     full["actual"] = actual_series.reindex(full["date"]).values
     full["bank_name"] = bank_name
     full["card_type"] = card_type
+
+    # Apply conformal CIs to the forecast portion of full DataFrame
+    if conformal is not None:
+        lower_w, upper_w = conformal
+        fc_mask = full["date"] > last_hist
+        n_fc = fc_mask.sum()
+        full.loc[fc_mask, "yhat_lower"] = full.loc[fc_mask, "yhat"].values + lower_w[:n_fc]
+        full.loc[fc_mask, "yhat_upper"] = full.loc[fc_mask, "yhat"].values + upper_w[:n_fc]
 
     # Clip negative values (can happen with expm1 on lower bounds)
     for col in ["forecast", "forecast_lower", "forecast_upper"]:
