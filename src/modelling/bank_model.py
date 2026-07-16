@@ -212,9 +212,12 @@ class _ETSWrapper:
                 yhat_lower = np.concatenate([fitted * 0.95, lower])
                 yhat_upper = np.concatenate([fitted * 1.05, upper])
             except Exception:
-                resid_std = np.std(self._fit.resid)
+                resid = self._fit.resid
+                resid_std = np.std(resid)
                 steps = np.arange(1, n_future + 1)
-                widths = 1.645 * resid_std * np.sqrt(steps)
+                # Linear scaling (not sqrt) — sqrt grows too wide at 12+ months
+                # Calibrated from typical ETS residual autocorrelation
+                widths = 1.645 * resid_std * (1.0 + 0.15 * steps)
                 yhat_lower = np.concatenate([fitted - 1.645 * resid_std, fc - widths])
                 yhat_upper = np.concatenate([fitted + 1.645 * resid_std, fc + widths])
         else:
@@ -319,7 +322,7 @@ def _run_ets_cv(
     from src.modelling.bank_config import USE_LOG_TRANSFORM
 
     initial_months = 36
-    horizon_months = 6
+    horizon_months = 12
     step_months = 6
 
     y_all = bank_df["y"].values
@@ -733,7 +736,7 @@ def run_bank_model(
         )
 
         is_ets = isinstance(model, _ETSWrapper)
-        if run_cv and not is_ets and len(df) >= 72:
+        if run_cv and not is_ets and len(df) >= 60:
             cv_result = _run_bank_cv(model, bank_name, card_type)
             cv_results.append(cv_result)
         elif run_cv and is_ets:
@@ -742,7 +745,7 @@ def run_bank_model(
         elif run_cv:
             logger.info(
                 f"  [{card_type.upper()}] {bank_name}: CV skipped "
-                f"(<72 months, not enough for 36m initial + 6m horizon)"
+                f"(<60 months, not enough for 36m initial + 12m horizon)"
             )
 
         fc = _forecast_bank(model, df, bank_name, card_type, bank_dir)
