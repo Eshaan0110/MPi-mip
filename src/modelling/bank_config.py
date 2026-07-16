@@ -28,14 +28,16 @@ TOP_N_ISSUERS = 20
 MIN_MONTHS    = 48
 
 # Explicit bank lists -- these override TOP_N_ISSUERS auto-selection.
-# CC: 10 banks covering ~91% of India total.
-# DC: 15 banks covering ~83% of India total.
+# CC: 12 banks covering ~93% of India total (added RBL Bank, IDFC First Bank).
+# DC: 16 banks covering ~85% of India total (added India Post Payments Bank).
 CC_BANK_LIST: list[str] = [
     "HDFC Bank",
     "State Bank of India",
     "ICICI Bank",
     "Axis Bank",
     "Kotak Mahindra Bank",
+    "RBL Bank",
+    "IDFC First Bank",
     "IndusInd Bank",
     "Bank of Baroda",
     "Yes Bank",
@@ -54,11 +56,12 @@ DC_BANK_LIST: list[str] = [
     "Bank of India",
     "Kotak Mahindra Bank",
     "Indian Bank",
-    "Central Bank of India",
-    "UCO Bank",
     "ICICI Bank",
-    "Indian Overseas Bank",
     "Paytm Payments Bank",
+    "Central Bank of India",
+    "India Post Payments Bank",
+    "Indian Overseas Bank",
+    "UCO Bank",
 ]
 
 
@@ -110,6 +113,8 @@ BANK_START_DATES: dict[tuple[str, str], pd.Timestamp] = {
     ("Bank of Baroda",      "cc"): pd.Timestamp("2019-04-01"),  # post Dena+Vijaya merger
     ("Yes Bank",            "cc"): pd.Timestamp("2020-06-01"),  # post moratorium reconstruction
     ("Canara Bank",         "cc"): pd.Timestamp("2020-04-01"),  # post Syndicate merger
+    ("RBL Bank",            "cc"): pd.Timestamp("2017-01-01"),  # growth regime shift
+    ("IDFC First Bank",     "cc"): pd.Timestamp("2019-01-01"),  # IDFC Bank → IDFC First merger
     # Axis, IndusInd, HSBC: use CC default (2013-01-01) -- clean series
 
     # DC overrides
@@ -120,6 +125,7 @@ BANK_START_DATES: dict[tuple[str, str], pd.Timestamp] = {
     ("Punjab National Bank","dc"): pd.Timestamp("2020-04-01"),  # post OBC+United merger
     ("Indian Bank",         "dc"): pd.Timestamp("2020-04-01"),  # post Allahabad merger
     ("Paytm Payments Bank", "dc"): pd.Timestamp("2018-04-01"),  # launched Apr 2018
+    ("India Post Payments Bank", "dc"): pd.Timestamp("2019-01-01"),  # launched late 2018
     # HDFC, Axis, BoI, Kotak, Central, UCO, ICICI, IOB: use DC default (2017-01-01)
 }
 
@@ -164,6 +170,10 @@ BANK_PROPHET_OVERRIDES: dict[str, dict] = {
     "ICICI Bank":           {"changepoint_prior_scale": 0.03},
     "Axis Bank":            {"changepoint_prior_scale": 0.03},
     "IndusInd Bank":        {"changepoint_prior_scale": 0.03},
+    # Newer/volatile banks
+    "RBL Bank":             {"changepoint_prior_scale": 0.10},
+    "IDFC First Bank":      {"changepoint_prior_scale": 0.10, "growth": "logistic"},
+    "India Post Payments Bank": {"changepoint_prior_scale": 0.10, "growth": "logistic"},
     # Hypergrowth banks: logistic growth cap to prevent runaway extrapolation
     "Kotak Mahindra Bank":  {"changepoint_prior_scale": 0.05, "growth": "logistic"},
 }
@@ -177,8 +187,10 @@ BANKS_NEEDING_CAPS: set[tuple[str, str]] = {
     ("Bank of Baroda",      "cc"),
     ("IndusInd Bank",       "cc"),
     ("HSBC",                "cc"),
+    ("IDFC First Bank",     "cc"),
     ("Kotak Mahindra Bank", "dc"),
     ("Bank of Baroda",      "dc"),
+    ("India Post Payments Bank", "dc"),
 }
 
 
@@ -282,7 +294,7 @@ BANK_FORECAST_FREQ    = "MS"
 BANK_CV_CONFIG = {
     "initial":  "1095 days",   # 36 months
     "period":   "182 days",    # 6-month step
-    "horizon":  "182 days",    # 6-month horizon
+    "horizon":  "365 days",    # 12-month horizon (extended from 6mo for longer-range accuracy)
     "parallel": "threads",     # Windows: threads avoids cmdstanpy file-lock races
 }
 
