@@ -109,7 +109,7 @@ BANK_START_DATES: dict[tuple[str, str], pd.Timestamp] = {
     ("HDFC Bank",           "cc"): pd.Timestamp("2017-01-01"),  # pre-2017 growth regime differs
     ("State Bank of India", "cc"): pd.Timestamp("2017-04-01"),  # post SBI associate merger
     ("ICICI Bank",          "cc"): pd.Timestamp("2017-01-01"),  # pre-demonetisation trajectory differs
-    ("Kotak Mahindra Bank", "cc"): pd.Timestamp("2018-01-01"),  # hypergrowth started 2018; flat before
+    ("Kotak Mahindra Bank", "cc"): pd.Timestamp("2020-01-01"),  # captures both growth and 2024 reversal regime
     ("Bank of Baroda",      "cc"): pd.Timestamp("2019-04-01"),  # post Dena+Vijaya merger
     ("Yes Bank",            "cc"): pd.Timestamp("2020-06-01"),  # post moratorium reconstruction
     ("Canara Bank",         "cc"): pd.Timestamp("2020-04-01"),  # post Syndicate merger
@@ -124,7 +124,7 @@ BANK_START_DATES: dict[tuple[str, str], pd.Timestamp] = {
     ("Union Bank of India", "dc"): pd.Timestamp("2020-04-01"),  # post triple merger
     ("Punjab National Bank","dc"): pd.Timestamp("2020-04-01"),  # post OBC+United merger
     ("Indian Bank",         "dc"): pd.Timestamp("2020-04-01"),  # post Allahabad merger
-    ("Paytm Payments Bank", "dc"): pd.Timestamp("2018-04-01"),  # launched Apr 2018
+    ("Paytm Payments Bank", "dc"): pd.Timestamp("2020-01-01"),  # post initial ramp-up; captures both purge events for ETS
     ("India Post Payments Bank", "dc"): pd.Timestamp("2019-01-01"),  # launched late 2018
     # HDFC, Axis, BoI, Kotak, Central, UCO, ICICI, IOB: use DC default (2017-01-01)
 }
@@ -174,8 +174,9 @@ BANK_PROPHET_OVERRIDES: dict[str, dict] = {
     "RBL Bank":             {"changepoint_prior_scale": 0.10},
     "IDFC First Bank":      {"changepoint_prior_scale": 0.10, "growth": "logistic"},
     "India Post Payments Bank": {"changepoint_prior_scale": 0.10, "growth": "logistic"},
-    # Hypergrowth banks: logistic growth cap to prevent runaway extrapolation
-    "Kotak Mahindra Bank":  {"changepoint_prior_scale": 0.05, "growth": "logistic"},
+    # Regime-shift banks: high flexibility to catch reversals
+    "Kotak Mahindra Bank":  {"changepoint_prior_scale": 0.20},
+    "Paytm Payments Bank":  {"changepoint_prior_scale": 0.25},
 }
 
 # ── Logistic growth caps (per bank, card type) ──────────────────────────
@@ -183,7 +184,6 @@ BANK_PROPHET_OVERRIDES: dict[str, dict] = {
 # Caps are computed dynamically: max(last * 1.3, last + trailing_12m_growth * 24)
 # floor is set to 0 for all banks (outstanding can't be negative).
 BANKS_NEEDING_CAPS: set[tuple[str, str]] = {
-    ("Kotak Mahindra Bank", "cc"),
     ("Bank of Baroda",      "cc"),
     ("IndusInd Bank",       "cc"),
     ("HSBC",                "cc"),
@@ -240,6 +240,7 @@ ETS_BANKS: dict[tuple[str, str], bool] = {
     ("ICICI Bank",     "dc"): True,   # ETS 5.28% vs Prophet 6.17%
     ("UCO Bank",       "dc"): True,   # ETS 2.64% vs Prophet 3.43%
     ("Indian Overseas Bank", "dc"): True,  # ETS 5.70% vs Prophet 8.97%
+    ("Paytm Payments Bank", "dc"): True,  # step-drop regime; ETS state-space adapts faster than Prophet
 }
 
 
