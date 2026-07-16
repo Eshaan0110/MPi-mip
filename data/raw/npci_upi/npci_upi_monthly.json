@@ -1,0 +1,920 @@
+[
+  {
+    "month": "June-2016",
+    "date": "2016-06-01",
+    "banks_live": 21.0,
+    "volume_mn": 0.0,
+    "value_cr": 0.0,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "July-2016",
+    "date": "2016-07-01",
+    "banks_live": 21.0,
+    "volume_mn": 0.09,
+    "value_cr": 0.38,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "August-2016",
+    "date": "2016-08-01",
+    "banks_live": 21.0,
+    "volume_mn": 0.09,
+    "value_cr": 3.09,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "September-2016",
+    "date": "2016-09-01",
+    "banks_live": 25.0,
+    "volume_mn": 0.09,
+    "value_cr": 32.64,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "October-2016",
+    "date": "2016-10-01",
+    "banks_live": 26.0,
+    "volume_mn": 0.1,
+    "value_cr": 48.57,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "November-2016",
+    "date": "2016-11-01",
+    "banks_live": 30.0,
+    "volume_mn": 0.29,
+    "value_cr": 100.46,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "December-2016",
+    "date": "2016-12-01",
+    "banks_live": 35.0,
+    "volume_mn": 1.99,
+    "value_cr": 707.93,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "January-2017",
+    "date": "2017-01-01",
+    "banks_live": 36.0,
+    "volume_mn": 4.46,
+    "value_cr": 1696.22,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "February-2017",
+    "date": "2017-02-01",
+    "banks_live": 44.0,
+    "volume_mn": 4.38,
+    "value_cr": 1937.71,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "March-2017",
+    "date": "2017-03-01",
+    "banks_live": 44.0,
+    "volume_mn": 6.37,
+    "value_cr": 2425.14,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:00.957815"
+  },
+  {
+    "month": "June-2017",
+    "date": "2017-06-01",
+    "banks_live": 52.0,
+    "volume_mn": 10.35,
+    "value_cr": 3098.36,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "July-2017",
+    "date": "2017-07-01",
+    "banks_live": 53.0,
+    "volume_mn": 11.63,
+    "value_cr": 3411.35,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "August-2017",
+    "date": "2017-08-01",
+    "banks_live": 55.0,
+    "volume_mn": 16.8,
+    "value_cr": 4156.62,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "September-2017",
+    "date": "2017-09-01",
+    "banks_live": 57.0,
+    "volume_mn": 30.98,
+    "value_cr": 5325.81,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "October-2017",
+    "date": "2017-10-01",
+    "banks_live": 60.0,
+    "volume_mn": 76.96,
+    "value_cr": 7057.78,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "November-2017",
+    "date": "2017-11-01",
+    "banks_live": 61.0,
+    "volume_mn": 105.02,
+    "value_cr": 9669.33,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "December-2017",
+    "date": "2017-12-01",
+    "banks_live": 67.0,
+    "volume_mn": 145.64,
+    "value_cr": 13174.24,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "January-2018",
+    "date": "2018-01-01",
+    "banks_live": 71.0,
+    "volume_mn": 151.83,
+    "value_cr": 15571.2,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "February-2018",
+    "date": "2018-02-01",
+    "banks_live": 86.0,
+    "volume_mn": 171.4,
+    "value_cr": 19126.2,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "March-2018",
+    "date": "2018-03-01",
+    "banks_live": 91.0,
+    "volume_mn": 178.05,
+    "value_cr": 24172.6,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.450987"
+  },
+  {
+    "month": "June-2018",
+    "date": "2018-06-01",
+    "banks_live": 110.0,
+    "volume_mn": 246.37,
+    "value_cr": 40834.03,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "July-2018",
+    "date": "2018-07-01",
+    "banks_live": 114.0,
+    "volume_mn": 273.75,
+    "value_cr": 51843.14,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "August-2018",
+    "date": "2018-08-01",
+    "banks_live": 114.0,
+    "volume_mn": 312.02,
+    "value_cr": 54212.26,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "September-2018",
+    "date": "2018-09-01",
+    "banks_live": 122.0,
+    "volume_mn": 405.87,
+    "value_cr": 59835.36,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "October-2018",
+    "date": "2018-10-01",
+    "banks_live": 128.0,
+    "volume_mn": 482.36,
+    "value_cr": 74978.27,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "November-2018",
+    "date": "2018-11-01",
+    "banks_live": 128.0,
+    "volume_mn": 524.94,
+    "value_cr": 82232.21,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "December-2018",
+    "date": "2018-12-01",
+    "banks_live": 129.0,
+    "volume_mn": 620.17,
+    "value_cr": 102594.82,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "January-2019",
+    "date": "2019-01-01",
+    "banks_live": 134.0,
+    "volume_mn": 672.75,
+    "value_cr": 109932.43,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "February-2019",
+    "date": "2019-02-01",
+    "banks_live": 139.0,
+    "volume_mn": 674.19,
+    "value_cr": 106737.12,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "March-2019",
+    "date": "2019-03-01",
+    "banks_live": 142.0,
+    "volume_mn": 799.54,
+    "value_cr": 133460.72,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:01.986156"
+  },
+  {
+    "month": "June-2019",
+    "date": "2019-06-01",
+    "banks_live": 142.0,
+    "volume_mn": 754.54,
+    "value_cr": 146566.35,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "July-2019",
+    "date": "2019-07-01",
+    "banks_live": 143.0,
+    "volume_mn": 822.29,
+    "value_cr": 146386.64,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "August-2019",
+    "date": "2019-08-01",
+    "banks_live": 141.0,
+    "volume_mn": 918.35,
+    "value_cr": 154504.89,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "September-2019",
+    "date": "2019-09-01",
+    "banks_live": 141.0,
+    "volume_mn": 955.02,
+    "value_cr": 161456.56,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "October-2019",
+    "date": "2019-10-01",
+    "banks_live": 141.0,
+    "volume_mn": 1148.36,
+    "value_cr": 191359.94,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "November-2019",
+    "date": "2019-11-01",
+    "banks_live": 143.0,
+    "volume_mn": 1218.77,
+    "value_cr": 189229.09,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "December-2019",
+    "date": "2019-12-01",
+    "banks_live": 143.0,
+    "volume_mn": 1308.4,
+    "value_cr": 202520.76,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "January-2020",
+    "date": "2020-01-01",
+    "banks_live": 144.0,
+    "volume_mn": 1305.02,
+    "value_cr": 216242.97,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "February-2020",
+    "date": "2020-02-01",
+    "banks_live": 146.0,
+    "volume_mn": 1325.69,
+    "value_cr": 222516.95,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "March-2020",
+    "date": "2020-03-01",
+    "banks_live": 148.0,
+    "volume_mn": 1246.84,
+    "value_cr": 206462.31,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:02.451604"
+  },
+  {
+    "month": "June-2020",
+    "date": "2020-06-01",
+    "banks_live": 155.0,
+    "volume_mn": 1336.93,
+    "value_cr": 261835.0,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "July-2020",
+    "date": "2020-07-01",
+    "banks_live": 164.0,
+    "volume_mn": 1497.36,
+    "value_cr": 290537.86,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "August-2020",
+    "date": "2020-08-01",
+    "banks_live": 168.0,
+    "volume_mn": 1618.83,
+    "value_cr": 298307.61,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "September-2020",
+    "date": "2020-09-01",
+    "banks_live": 174.0,
+    "volume_mn": 1800.14,
+    "value_cr": 329027.66,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "October-2020",
+    "date": "2020-10-01",
+    "banks_live": 189.0,
+    "volume_mn": 2071.62,
+    "value_cr": 386106.74,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "November-2020",
+    "date": "2020-11-01",
+    "banks_live": 200.0,
+    "volume_mn": 2210.23,
+    "value_cr": 390999.15,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "December-2020",
+    "date": "2020-12-01",
+    "banks_live": 207.0,
+    "volume_mn": 2234.16,
+    "value_cr": 416176.21,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "January-2021",
+    "date": "2021-01-01",
+    "banks_live": 207.0,
+    "volume_mn": 2302.73,
+    "value_cr": 431181.89,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "February-2021",
+    "date": "2021-02-01",
+    "banks_live": 213.0,
+    "volume_mn": 2292.9,
+    "value_cr": 425062.76,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "March-2021",
+    "date": "2021-03-01",
+    "banks_live": 216.0,
+    "volume_mn": 2731.68,
+    "value_cr": 504886.44,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.062679"
+  },
+  {
+    "month": "June-2021",
+    "date": "2021-06-01",
+    "banks_live": 229.0,
+    "volume_mn": 2807.51,
+    "value_cr": 547373.17,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "July-2021",
+    "date": "2021-07-01",
+    "banks_live": 235.0,
+    "volume_mn": 3247.82,
+    "value_cr": 606281.14,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "August-2021",
+    "date": "2021-08-01",
+    "banks_live": 249.0,
+    "volume_mn": 3555.55,
+    "value_cr": 639116.95,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "September-2021",
+    "date": "2021-09-01",
+    "banks_live": 259.0,
+    "volume_mn": 3654.3,
+    "value_cr": 654351.81,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "October-2021",
+    "date": "2021-10-01",
+    "banks_live": 261.0,
+    "volume_mn": 4218.65,
+    "value_cr": 771444.98,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "November-2021",
+    "date": "2021-11-01",
+    "banks_live": 274.0,
+    "volume_mn": 4186.48,
+    "value_cr": 768436.11,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "December-2021",
+    "date": "2021-12-01",
+    "banks_live": 282.0,
+    "volume_mn": 4566.3,
+    "value_cr": 826848.22,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "January-2022",
+    "date": "2022-01-01",
+    "banks_live": 297.0,
+    "volume_mn": 4617.15,
+    "value_cr": 831993.11,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "February-2022",
+    "date": "2022-02-01",
+    "banks_live": 304.0,
+    "volume_mn": 4527.49,
+    "value_cr": 826843.0,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "March-2022",
+    "date": "2022-03-01",
+    "banks_live": 314.0,
+    "volume_mn": 5405.65,
+    "value_cr": 960581.66,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:03.889288"
+  },
+  {
+    "month": "June-2022",
+    "date": "2022-06-01",
+    "banks_live": 330.0,
+    "volume_mn": 5862.75,
+    "value_cr": 1014384.31,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.128253"
+  },
+  {
+    "month": "July-2022",
+    "date": "2022-07-01",
+    "banks_live": 338.0,
+    "volume_mn": 6288.4,
+    "value_cr": 1062991.76,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.128253"
+  },
+  {
+    "month": "August-2022",
+    "date": "2022-08-01",
+    "banks_live": 346.0,
+    "volume_mn": 6579.63,
+    "value_cr": 1072792.68,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.128253"
+  },
+  {
+    "month": "September-2022",
+    "date": "2022-09-01",
+    "banks_live": 358.0,
+    "volume_mn": 6780.8,
+    "value_cr": 1116438.1,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.128253"
+  },
+  {
+    "month": "October-2022",
+    "date": "2022-10-01",
+    "banks_live": 365.0,
+    "volume_mn": 7305.42,
+    "value_cr": 1211582.51,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.127253"
+  },
+  {
+    "month": "November-2022",
+    "date": "2022-11-01",
+    "banks_live": 376.0,
+    "volume_mn": 7309.45,
+    "value_cr": 1190593.39,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.127253"
+  },
+  {
+    "month": "December-2022",
+    "date": "2022-12-01",
+    "banks_live": 382.0,
+    "volume_mn": 7829.49,
+    "value_cr": 1282055.01,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.127253"
+  },
+  {
+    "month": "January-2023",
+    "date": "2023-01-01",
+    "banks_live": 385.0,
+    "volume_mn": 8036.89,
+    "value_cr": 1298726.62,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.127253"
+  },
+  {
+    "month": "February-2023",
+    "date": "2023-02-01",
+    "banks_live": 390.0,
+    "volume_mn": 7534.76,
+    "value_cr": 1235846.62,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.127253"
+  },
+  {
+    "month": "March-2023",
+    "date": "2023-03-01",
+    "banks_live": 399.0,
+    "volume_mn": 8685.3,
+    "value_cr": 1410443.01,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.127253"
+  },
+  {
+    "month": "June-2023",
+    "date": "2023-06-01",
+    "banks_live": 458.0,
+    "volume_mn": 9335.06,
+    "value_cr": 1475464.26,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "July-2023",
+    "date": "2023-07-01",
+    "banks_live": 473.0,
+    "volume_mn": 9964.61,
+    "value_cr": 1533536.44,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "August-2023",
+    "date": "2023-08-01",
+    "banks_live": 484.0,
+    "volume_mn": 10586.02,
+    "value_cr": 1576536.56,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "September-2023",
+    "date": "2023-09-01",
+    "banks_live": 492.0,
+    "volume_mn": 10555.69,
+    "value_cr": 1579133.18,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "October-2023",
+    "date": "2023-10-01",
+    "banks_live": 505.0,
+    "volume_mn": 11408.79,
+    "value_cr": 1715768.34,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "November-2023",
+    "date": "2023-11-01",
+    "banks_live": 516.0,
+    "volume_mn": 11235.29,
+    "value_cr": 1739740.61,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "December-2023",
+    "date": "2023-12-01",
+    "banks_live": 522.0,
+    "volume_mn": 12020.23,
+    "value_cr": 1822949.42,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "January-2024",
+    "date": "2024-01-01",
+    "banks_live": 550.0,
+    "volume_mn": 12203.02,
+    "value_cr": 1841083.97,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "February-2024",
+    "date": "2024-02-01",
+    "banks_live": 560.0,
+    "volume_mn": 12102.67,
+    "value_cr": 1827869.35,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "March-2024",
+    "date": "2024-03-01",
+    "banks_live": 572.0,
+    "volume_mn": 13440.0,
+    "value_cr": 1978353.23,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:04.749366"
+  },
+  {
+    "month": "June-2024",
+    "date": "2024-06-01",
+    "banks_live": 602.0,
+    "volume_mn": 13885.14,
+    "value_cr": 2007081.2,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "July-2024",
+    "date": "2024-07-01",
+    "banks_live": 605.0,
+    "volume_mn": 14435.55,
+    "value_cr": 2064292.41,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "August-2024",
+    "date": "2024-08-01",
+    "banks_live": 608.0,
+    "volume_mn": 14963.05,
+    "value_cr": 2060735.57,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "September-2024",
+    "date": "2024-09-01",
+    "banks_live": 622.0,
+    "volume_mn": 15041.75,
+    "value_cr": 2063994.71,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "October-2024",
+    "date": "2024-10-01",
+    "banks_live": 632.0,
+    "volume_mn": 16584.97,
+    "value_cr": 2349821.46,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "November-2024",
+    "date": "2024-11-01",
+    "banks_live": 637.0,
+    "volume_mn": 15482.02,
+    "value_cr": 2155187.4,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "December-2024",
+    "date": "2024-12-01",
+    "banks_live": 641.0,
+    "volume_mn": 16730.01,
+    "value_cr": 2324699.91,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "January-2025",
+    "date": "2025-01-01",
+    "banks_live": 647.0,
+    "volume_mn": 16996.0,
+    "value_cr": 2348037.12,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "February-2025",
+    "date": "2025-02-01",
+    "banks_live": 653.0,
+    "volume_mn": 16106.19,
+    "value_cr": 2196481.69,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "March-2025",
+    "date": "2025-03-01",
+    "banks_live": 661.0,
+    "volume_mn": 18301.51,
+    "value_cr": 2477221.61,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.071807"
+  },
+  {
+    "month": "June-2025",
+    "date": "2025-06-01",
+    "banks_live": 675.0,
+    "volume_mn": 18395.01,
+    "value_cr": 2403930.69,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "July-2025",
+    "date": "2025-07-01",
+    "banks_live": 684.0,
+    "volume_mn": 19467.95,
+    "value_cr": 2508498.09,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "August-2025",
+    "date": "2025-08-01",
+    "banks_live": 688.0,
+    "volume_mn": 20008.31,
+    "value_cr": 2485472.91,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "September-2025",
+    "date": "2025-09-01",
+    "banks_live": 686.0,
+    "volume_mn": 19633.43,
+    "value_cr": 2489736.54,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "October-2025",
+    "date": "2025-10-01",
+    "banks_live": 683.0,
+    "volume_mn": 20700.92,
+    "value_cr": 2727790.68,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "November-2025",
+    "date": "2025-11-01",
+    "banks_live": 684.0,
+    "volume_mn": 20466.98,
+    "value_cr": 2631632.63,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "December-2025",
+    "date": "2025-12-01",
+    "banks_live": 685.0,
+    "volume_mn": 21634.67,
+    "value_cr": 2796712.73,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "January-2026",
+    "date": "2026-01-01",
+    "banks_live": 691.0,
+    "volume_mn": 21703.44,
+    "value_cr": 2833481.22,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "February-2026",
+    "date": "2026-02-01",
+    "banks_live": 694.0,
+    "volume_mn": 20394.18,
+    "value_cr": 2684229.29,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "March-2026",
+    "date": "2026-03-01",
+    "banks_live": 705.0,
+    "volume_mn": 22641.11,
+    "value_cr": 2952542.05,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.143712"
+  },
+  {
+    "month": "April-2026",
+    "date": "2026-04-01",
+    "banks_live": 713.0,
+    "volume_mn": 22346.8,
+    "value_cr": 2902988.05,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.270607"
+  },
+  {
+    "month": "May-2026",
+    "date": "2026-05-01",
+    "banks_live": 720.0,
+    "volume_mn": 23201.93,
+    "value_cr": 2990424.21,
+    "source": "npci_api",
+    "fetched_at": "2026-06-12T17:40:05.270607"
+  }
+]
