@@ -237,7 +237,10 @@ def run_rbi_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     processed_dir = settings.paths.processed_dir
 
     combined_files = sorted(raw_dir.glob(settings.rbi_psi.file_pattern))
-    monthly_files = sorted(raw_dir.glob("PSI*.XLSX"))
+    # Match both .XLSX and .xlsx — Linux (GitHub Actions) is case-sensitive
+    monthly_files = sorted(
+        list(raw_dir.glob("PSI*.XLSX")) + list(raw_dir.glob("PSI*.xlsx"))
+    )
 
     # Exclude monthly files that also match the combined pattern
     combined_names = {f.name for f in combined_files}
