@@ -63,6 +63,117 @@ def _detect_format(
     return None, None
 
 
+# ── Individual monthly PSI file parser ────────────────────────────────────
+# The RBI scraper downloads one XLSX per month (e.g. PSIAPRIL2026*.XLSX).
+# These have a single sheet named "<Month> <Year>" with fixed row layout
+# but variable row offsets. Column F holds the current month's value.
+
+_MONTHLY_LABEL_MAP: list[tuple[str, str, str | None]] = [
+    # (output_column, label_substring, section_context)
+    # section_context disambiguates labels that appear in multiple sections.
+    # "part_iii" = rows after "PART III" header (infrastructure), None = first match.
+    ("credit_cards_outstanding_lakh",  "1.1 credit cards",   "part_iii"),
+    ("debit_cards_outstanding_lakh",   "1.2 debit cards",    "part_iii"),
+    ("credit_card_vol_lakh",           "4.1 credit cards",   None),
+    ("credit_card_pos_vol_lakh",       "4.1.1 pos",          None),
+    ("credit_card_other_vol_lakh",     "4.1.2 others",       None),
+    ("debit_card_vol_lakh",            "4.2 debit cards",    None),
+    ("debit_card_pos_vol_lakh",        "4.2.1 pos",          None),
+    ("debit_card_other_vol_lakh",      "4.2.2 others",       None),
+    ("pos_terminals_lakh",             "number of pos terminals", "part_iii"),
+    ("bharat_qr_lakh",                 "bharat qr",          "part_iii"),
+    ("upi_qr_lakh",                    "upi qr",             "part_iii"),
+]
+
+# Value columns need a separate pass because the same row label holds both
+# volume (col E or F) and value. In individual files, Part II rows have
+# volume in col E and value in col F — but Part III infrastructure rows
+# only have volume. We handle this by reading both vol and val from the
+# same row using different Excel columns.
+
+_MONTHLY_VALUE_LABEL_MAP: list[tuple[str, str]] = [
+    # (output_column, label_substring) — value is read from col J (index 9)
+    ("credit_card_val_cr",       "4.1 credit cards"),
+    ("credit_card_pos_val_cr",   "4.1.1 pos"),
+    ("credit_card_other_val_cr", "4.1.2 others"),
+    ("debit_card_val_cr",        "4.2 debit cards"),
+    ("debit_card_pos_val_cr",    "4.2.1 pos"),
+    ("debit_card_other_val_cr",  "4.2.2 others"),
+]
+
+_MONTH_NAMES = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+]
+
+
+def _is_monthly_psi(sheet_name: str) -> bool:
+    """True if the sheet name looks like 'April 2026' (individual monthly PSI)."""
+    parts = sheet_name.strip().split()
+    return (
+        len(parts) == 2
+        and parts[0].lower() in _MONTH_NAMES
+        and parts[1].isdigit()
+        and len(parts[1]) == 4
+    )
+
+
+def _parse_monthly_psi(filepath: Path) -> pd.DataFrame:
+    """Parse one individual monthly PSI file into a single-row DataFrame.
+
+    Layout: columns C-F = Volume (lakh), columns G-J = Value (₹ crore).
+    Column F (idx 5) = current month volume, column J (idx 9) = current month value.
+    Row positions vary between files; we match by label text.
+    """
+    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    ws = wb.active
+    sheet_name = ws.title.strip()
+
+    parts = sheet_name.split()
+    month_str, year_str = parts[0], parts[1]
+    date = pd.to_datetime(f"{month_str} {year_str}", format="%B %Y")
+
+    vol_col = 5   # column F (0-indexed)
+    val_col = 9   # column J (0-indexed)
+
+    all_rows: list[tuple[int, str, list]] = []
+    part_iii_start = None
+    for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=120, max_col=11, values_only=True), start=1):
+        label = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+        if "part iii" in label.lower():
+            part_iii_start = r_idx
+        all_rows.append((r_idx, label, list(row)))
+
+    record: dict = {"date": date, "source_format": "monthly"}
+
+    for out_col, label_sub, section in _MONTHLY_LABEL_MAP:
+        label_sub_lower = label_sub.lower()
+        for r_idx, label, row in all_rows:
+            if section == "part_iii" and (part_iii_start is None or r_idx < part_iii_start):
+                continue
+            if label_sub_lower in label.lower():
+                record[out_col] = _safe_float(row[vol_col] if vol_col < len(row) else None)
+                break
+        else:
+            record[out_col] = None
+
+    for out_col, label_sub in _MONTHLY_VALUE_LABEL_MAP:
+        label_sub_lower = label_sub.lower()
+        for r_idx, label, row in all_rows:
+            if label_sub_lower in label.lower():
+                record[out_col] = _safe_float(row[val_col] if val_col < len(row) else None)
+                break
+        else:
+            record[out_col] = None
+
+    logger.info(
+        f"{filepath.name}: parsed monthly format (sheet '{sheet_name}') "
+        f"CC={record.get('credit_cards_outstanding_lakh')}, "
+        f"DC={record.get('debit_cards_outstanding_lakh')}"
+    )
+    return pd.DataFrame([record])
+
+
 def parse_psi_file(filepath: Path, settings: Settings) -> pd.DataFrame:
     """Parse one PSI file, auto-detecting old vs new format by sheet name."""
     wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
@@ -125,15 +236,35 @@ def run_rbi_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     raw_dir = settings.paths.rbi_psi_dir
     processed_dir = settings.paths.processed_dir
 
-    files = sorted(raw_dir.glob(settings.rbi_psi.file_pattern))
+    combined_files = sorted(raw_dir.glob(settings.rbi_psi.file_pattern))
+    monthly_files = sorted(raw_dir.glob("PSI*.XLSX"))
+
+    # Exclude monthly files that also match the combined pattern
+    combined_names = {f.name for f in combined_files}
+    monthly_files = [f for f in monthly_files if f.name not in combined_names]
+
+    # Verify monthly files are actually individual monthly PSI format
+    valid_monthly: list[Path] = []
+    for fp in monthly_files:
+        try:
+            wb = openpyxl.load_workbook(fp, read_only=True, data_only=True)
+            if _is_monthly_psi(wb.active.title):
+                valid_monthly.append(fp)
+            wb.close()
+        except Exception:
+            pass
+
+    files = combined_files + valid_monthly
     if not files:
         raise FileNotFoundError(
-            f"No PSI files matching '{settings.rbi_psi.file_pattern}' in {raw_dir}\n"
+            f"No PSI files matching '{settings.rbi_psi.file_pattern}' or 'PSI*.XLSX' in {raw_dir}\n"
             f"Download from RBI DBIE → Statistics → Financial Sector → Payment Systems\n"
             f"and save to data/raw/rbi_psi/."
         )
 
-    logger.info(f"Found {len(files)} PSI file(s): {[f.name for f in files]}")
+    logger.info(
+        f"Found {len(combined_files)} combined + {len(valid_monthly)} monthly PSI file(s)"
+    )
 
     # Freshness across all input files
     hash_record = processed_dir / ".rbi_psi.sha256"
@@ -143,13 +274,27 @@ def run_rbi_ingestion(settings: Settings | None = None) -> pd.DataFrame:
     else:
         logger.info("REPROCESSING existing files (combined hash unchanged)")
 
-    # Parse each file
-    frames = [parse_psi_file(fp, settings) for fp in files]
+    # Parse each file — route monthly files to the dedicated parser
+    monthly_set = set(valid_monthly)
+    frames: list[pd.DataFrame] = []
+    for fp in files:
+        if fp in monthly_set:
+            frames.append(_parse_monthly_psi(fp))
+        else:
+            frames.append(parse_psi_file(fp, settings))
 
+    # Prefer combined format over monthly for overlapping months (combined is
+    # the official consolidated release). Monthly files are concat'd last, so
+    # we sort by date + source_format to ensure combined ("new"/"old") sorts
+    # after "monthly", then keep="last" retains the combined version.
+    _fmt_priority = {"monthly": 0, "old": 1, "new": 2}
+    combined = pd.concat(frames, ignore_index=True)
+    combined["_priority"] = combined["source_format"].map(_fmt_priority).fillna(0)
     combined = (
-        pd.concat(frames, ignore_index=True)
-        .sort_values("date")
+        combined
+        .sort_values(["date", "_priority"])
         .drop_duplicates(subset=["date"], keep="last")
+        .drop(columns=["_priority"])
         .reset_index(drop=True)
     )
 
