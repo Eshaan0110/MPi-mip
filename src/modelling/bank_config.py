@@ -5,7 +5,7 @@ All parameters for the bank-level ground-up model.
 Edit here only -- no changes needed in model code.
 
 Architecture:
-  - Explicit bank lists for CC (10) and DC (15) individual models
+  - Explicit bank lists for CC (12) and DC (16) individual models
   - Remaining banks aggregated into a residual bucket (PSI - top banks)
   - Individual forecasts + residual = ground-up India total
   - Cross-check against PSI aggregate to validate coverage and accuracy
