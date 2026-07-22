@@ -30,15 +30,16 @@ function median(arr: number[]): number {
 
 const ALLOWED_CC = new Set([
   "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
-  "Kotak Mahindra Bank", "IndusInd Bank", "Bank of Baroda",
-  "Yes Bank", "Canara Bank", "HSBC",
+  "Kotak Mahindra Bank", "RBL Bank", "IDFC First Bank",
+  "IndusInd Bank", "Bank of Baroda", "Yes Bank", "Canara Bank",
+  "HSBC",
 ]);
 const ALLOWED_DC = new Set([
   "State Bank of India", "Bank of Baroda", "Canara Bank", "HDFC Bank",
   "Union Bank of India", "Punjab National Bank", "Axis Bank",
   "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
-  "Central Bank of India", "UCO Bank", "ICICI Bank",
-  "Indian Overseas Bank", "Paytm Payments Bank",
+  "ICICI Bank", "Paytm Payments Bank", "Central Bank of India",
+  "India Post Payments Bank", "Indian Overseas Bank", "UCO Bank",
 ]);
 
 export default function ModelPerformancePage() {
