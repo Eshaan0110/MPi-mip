@@ -59,10 +59,10 @@ export default function AboutPage() {
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-200 mb-3">Methodology</h2>
         <ul className="space-y-2 text-sm text-gray-500 dark:text-slate-400">
-          <li><strong className="text-gray-700 dark:text-slate-300">Ensemble Forecasting:</strong> Prophet + ARIMA(1,1,1) + damped ETS with per-series cross-validation-optimized weights</li>
-          <li><strong className="text-gray-700 dark:text-slate-300">Bank-Level Models:</strong> Top 10 credit card and top 15 debit card issuers modelled individually; remaining banks aggregated into a residual bucket</li>
+          <li><strong className="text-gray-700 dark:text-slate-300">Forecasting:</strong> Prophet or ETS selected per series via walk-forward cross-validation, with log-transform variance stabilisation</li>
+          <li><strong className="text-gray-700 dark:text-slate-300">Bank-Level Models:</strong> Top 12 credit card and top 16 debit card issuers modelled individually; remaining banks aggregated into a residual bucket</li>
           <li><strong className="text-gray-700 dark:text-slate-300">Ground-Up Approach:</strong> Individual bank forecasts + residual = India total, cross-checked against aggregate for consistency</li>
-          <li><strong className="text-gray-700 dark:text-slate-300">Validation:</strong> Walk-forward cross-validation (48-month initial window, 6-month horizon, 6-month step) with out-of-sample testing</li>
+          <li><strong className="text-gray-700 dark:text-slate-300">Validation:</strong> Walk-forward cross-validation (36-month initial window, 12-month horizon, 6-month step) with out-of-sample testing</li>
           <li><strong className="text-gray-700 dark:text-slate-300">Confidence Intervals:</strong> 90% conformal prediction intervals from walk-forward CV residual quantiles</li>
         </ul>
       </section>
@@ -94,13 +94,13 @@ export default function AboutPage() {
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div className="bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700/50 rounded-xl p-4">
             <p className="text-gray-400 dark:text-slate-500">Credit Card Banks Modelled</p>
-            <p className="text-xl font-bold text-gray-900 dark:text-white">10 + Residual</p>
-            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">~91% of India total outstanding</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-white">12 + Residual</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">~93% of India total outstanding</p>
           </div>
           <div className="bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700/50 rounded-xl p-4">
             <p className="text-gray-400 dark:text-slate-500">Debit Card Banks Modelled</p>
-            <p className="text-xl font-bold text-gray-900 dark:text-white">15 + Residual</p>
-            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">~83% of India total outstanding</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-white">16 + Residual</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">~85% of India total outstanding</p>
           </div>
         </div>
       </section>
@@ -111,7 +111,7 @@ export default function AboutPage() {
           <li>Forecasts assume historical patterns continue — structural breaks (new regulations, bank mergers) are not predicted</li>
           <li>Jun 2025 CC dip confirmed as an RBI reporting anomaly and excluded from model assessment</li>
           <li>NPCI UPI data undergoes occasional revisions; forecasts use the latest available figures</li>
-          <li>Forward-looking variables (bank news, policy announcements) planned for Phase 3</li>
+          <li>Forward-looking variables (bank news, policy announcements) available via the AI Research Agent pipeline</li>
         </ul>
       </section>
     </div>
