@@ -12,16 +12,18 @@ function fmtM(n: number, decimals = 1): string { return n.toFixed(decimals) + " 
 
 const ALLOWED_CC_BANKS = new Set([
   "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
-  "Kotak Mahindra Bank", "IndusInd Bank", "Bank of Baroda",
-  "Yes Bank", "Canara Bank", "HSBC", "_RESIDUAL",
+  "Kotak Mahindra Bank", "RBL Bank", "IDFC First Bank",
+  "IndusInd Bank", "Bank of Baroda", "Yes Bank", "Canara Bank",
+  "HSBC", "_RESIDUAL",
 ]);
 
 const ALLOWED_DC_BANKS = new Set([
   "State Bank of India", "Bank of Baroda", "Canara Bank", "HDFC Bank",
   "Union Bank of India", "Punjab National Bank", "Axis Bank",
   "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
-  "Central Bank of India", "UCO Bank", "ICICI Bank",
-  "Indian Overseas Bank", "Paytm Payments Bank", "_RESIDUAL",
+  "ICICI Bank", "Paytm Payments Bank", "Central Bank of India",
+  "India Post Payments Bank", "Indian Overseas Bank", "UCO Bank",
+  "_RESIDUAL",
 ]);
 
 function displayBank(name: string): string {
