@@ -69,7 +69,7 @@ def verify_api_access() -> bool:
     try:
         client = _get_claude_client()
         client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=5,
             messages=[{"role": "user", "content": "ping"}],
         )
@@ -105,7 +105,7 @@ def extract_signals(article: RawArticle) -> list[dict[str, Any]]:
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
