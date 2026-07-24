@@ -29,6 +29,16 @@ interface RetrainLog {
   evaluated_at: string;
 }
 
+interface AgentArticle {
+  id: string;
+  run_id: string;
+  title: string;
+  source: string | null;
+  url: string | null;
+  signals_extracted: number;
+  discovered_at: string;
+}
+
 interface AgentRun {
   id: string;
   run_type: string;
@@ -82,19 +92,22 @@ export default function AgentPage() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [retrains, setRetrains] = useState<RetrainLog[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [articles, setArticles] = useState<AgentArticle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"findings" | "retrains" | "runs">("findings");
+  const [tab, setTab] = useState<"findings" | "articles" | "retrains" | "runs">("findings");
 
   useEffect(() => {
     async function load() {
-      const [f, r, a] = await Promise.all([
+      const [f, r, a, ar] = await Promise.all([
         supabase.from("agent_findings").select("*").order("discovered_at", { ascending: false }).limit(100),
         supabase.from("agent_retrains").select("*").order("evaluated_at", { ascending: false }).limit(50),
         supabase.from("agent_runs").select("*").order("started_at", { ascending: false }).limit(20),
+        supabase.from("agent_articles").select("*").order("discovered_at", { ascending: false }).limit(100),
       ]);
       if (f.data) setFindings(f.data);
       if (r.data) setRetrains(r.data);
       if (a.data) setRuns(a.data);
+      if (ar.data) setArticles(ar.data);
       setLoading(false);
     }
     load();
@@ -128,7 +141,11 @@ export default function AgentPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-5 text-center">
+          <p className="text-sm text-gray-500 dark:text-slate-400">Articles Crawled</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-white">{articles.length}</p>
+        </div>
         <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-5 text-center">
           <p className="text-sm text-gray-500 dark:text-slate-400">Signals Found</p>
           <p className="text-3xl font-bold text-gray-900 dark:text-white">{findings.length}</p>
@@ -148,7 +165,7 @@ export default function AgentPage() {
       </div>
 
       <div className="flex rounded-lg border border-gray-300 dark:border-slate-600 overflow-hidden mb-6 w-fit">
-        {(["findings", "retrains", "runs"] as const).map((t) => (
+        {(["findings", "articles", "retrains", "runs"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium transition-colors capitalize ${tab === t ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-700"}`}>
             {t}
@@ -193,6 +210,37 @@ export default function AgentPage() {
                 )}
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {tab === "articles" && (
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-6">
+          {articles.length === 0 ? (
+            <p className="text-gray-400 dark:text-slate-500 text-center py-8">No articles collected yet. Articles will appear after the agent pipeline runs.</p>
+          ) : (
+            <div className="space-y-3">
+              {articles.map((a) => (
+                <div key={a.id} className="flex items-start justify-between gap-4 py-3 border-b border-gray-200 dark:border-slate-700/50 last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">
+                      {a.url ? (
+                        <a href={a.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 dark:hover:text-blue-400">{a.title}</a>
+                      ) : a.title}
+                    </p>
+                    {a.source && (
+                      <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{a.source}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs text-gray-400 dark:text-slate-500">{formatDate(a.discovered_at)}</p>
+                    {a.signals_extracted > 0 && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">{a.signals_extracted} signal{a.signals_extracted > 1 ? "s" : ""}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

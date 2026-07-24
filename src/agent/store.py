@@ -63,6 +63,28 @@ def save_findings_batch(findings: list[dict[str, Any]]) -> int:
     return len(result.data)
 
 
+def save_articles_batch(run_id: str, articles: list[dict[str, Any]]) -> int:
+    """Persist collected articles for a run. Returns count saved."""
+    if not articles:
+        return 0
+    client = _get_client()
+    rows = [
+        {
+            "run_id": run_id,
+            "title": a.get("title", "")[:500],
+            "source": a.get("source", ""),
+            "url": a.get("url", ""),
+            "signals_extracted": a.get("signals_extracted", 0),
+        }
+        for a in articles
+        if a.get("title")
+    ]
+    if not rows:
+        return 0
+    result = client.table("agent_articles").insert(rows).execute()
+    return len(result.data)
+
+
 def get_recent_findings(days: int = 30, limit: int = 200) -> list[dict]:
     """Fetch recent findings for feature engineering."""
     client = _get_client()

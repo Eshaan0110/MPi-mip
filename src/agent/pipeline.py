@@ -27,6 +27,7 @@ from src.agent.store import (
     log_run_start,
     log_run_end,
     save_findings_batch,
+    save_articles_batch,
 )
 
 
@@ -66,6 +67,12 @@ async def run_agent_pipeline() -> dict:
         articles = await run_research()
         summary["articles_collected"] = len(articles)
 
+        # Save collected articles to Supabase
+        article_records = [
+            {"title": a.title, "source": a.source, "url": a.url}
+            for a in articles
+        ]
+
         if not articles:
             logger.warning("No articles found — skipping extraction")
             log_run_end(run_id, "success", "No articles found")
@@ -85,6 +92,10 @@ async def run_agent_pipeline() -> dict:
             summary["error"] = msg
             return summary
         summary["signals_extracted"] = len(signals)
+
+        # Save articles with signal counts
+        save_articles_batch(run_id, article_records)
+        logger.info(f"Saved {len(article_records)} articles to Supabase")
 
         if signals:
             findings = []
