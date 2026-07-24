@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "MPi Market Intelligence Platform — cards outstanding forecasting"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+    "anthropic>=0.120.0",
     "loguru>=0.7",
     "openpyxl>=3.1",
     "pandas>=2.2",
