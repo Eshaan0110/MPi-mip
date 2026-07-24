@@ -109,7 +109,7 @@ def extract_signals(article: RawArticle) -> list[dict[str, Any]]:
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw_text = response.content[0].text.strip()
+        raw_text = next(b.text for b in response.content if b.type == "text").strip()
 
         if raw_text.startswith("```"):
             raw_text = raw_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
