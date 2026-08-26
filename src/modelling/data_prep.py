@@ -370,6 +370,63 @@ def build_future_df(
     return future
 
 
+def build_regressor_scenario_bands(
+    train_df: pd.DataFrame,
+    config: dict,
+    master: pd.DataFrame,
+) -> dict[str, pd.DataFrame]:
+    """Build optimistic/pessimistic scenario bands for regressor extrapolation.
+
+    Returns dict with keys 'optimistic', 'base', 'pessimistic', each a
+    DataFrame of regressor values over the forecast horizon.
+    Optimistic = 1.5x slope, Pessimistic = 0.5x slope, Base = 1.0x (damped).
+    """
+    periods = FORECAST_CONFIG["periods"]
+    last_date = train_df["ds"].max()
+    future_dates = pd.date_range(
+        start=last_date + pd.DateOffset(months=1), periods=periods, freq="MS",
+    )
+    regressors: list[RegressorSpec] = config["regressors"]
+    m = master.copy()
+    m["date"] = m["date"].dt.to_period("M").dt.to_timestamp()
+
+    scenarios = {s: pd.DataFrame({"ds": future_dates}) for s in ["optimistic", "base", "pessimistic"]}
+    slope_multipliers = {"optimistic": 1.5, "base": 1.0, "pessimistic": 0.5}
+
+    for spec in regressors:
+        raw_col = spec.col
+        if raw_col not in m.columns:
+            continue
+        filled = _apply_fill(m[raw_col], spec.fill_method)
+        if spec.lag > 0:
+            filled = filled.shift(spec.lag)
+        final_col = f"{raw_col}_lag{spec.lag}" if spec.lag > 0 else raw_col
+        hist_vals = filled.dropna().values
+
+        if "repo_rate" in raw_col or "cpi" in raw_col:
+            for s_name, s_df in scenarios.items():
+                s_df[final_col] = float(hist_vals[-1]) if len(hist_vals) > 0 else 0
+            continue
+
+        if len(hist_vals) >= 6:
+            slope = np.polyfit(range(6), hist_vals[-6:], 1)[0]
+            proj_val = hist_vals[-1]
+        else:
+            slope = 0
+            proj_val = hist_vals[-1] if len(hist_vals) > 0 else 0
+
+        damping = 0.95
+        for s_name, s_df in scenarios.items():
+            mult = slope_multipliers[s_name]
+            vals = []
+            for i in range(1, periods + 1):
+                v = max(0.0, proj_val + (slope * mult) * (damping ** i) * i)
+                vals.append(v)
+            s_df[final_col] = vals
+
+    return scenarios
+
+
 if __name__ == "__main__":
     data   = load_all()
     master = build_master(data)
