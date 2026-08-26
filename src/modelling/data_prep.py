@@ -215,8 +215,6 @@ def build_training_df(
         if spec.lag > 0:
             lagged_col = f"{raw_col}_lag{spec.lag}"
             df[lagged_col] = filled.shift(spec.lag)
-            # Backfill any leading nulls introduced by the lag
-            df[lagged_col] = _apply_fill(df[lagged_col], "bfill")
         else:
             df[raw_col] = filled
 
@@ -327,7 +325,7 @@ def build_future_df(
 
         filled = _apply_fill(m[raw_col], spec.fill_method)
         if spec.lag > 0:
-            filled = filled.shift(spec.lag).pipe(_apply_fill, "bfill")
+            filled = filled.shift(spec.lag)
 
         final_col = f"{raw_col}_lag{spec.lag}" if spec.lag > 0 else raw_col
 
@@ -358,10 +356,12 @@ def build_future_df(
             proj_val = last_val
             logger.info(f"Forward proj {final_col}: trend extrapolation, slope={slope:.2f}/month")
 
-        # Fill forecast months (clip at zero to prevent negative regressor values)
+        # Fill forecast months with damped extrapolation (slope decays by 5%/month)
+        damping = 0.95
         mask = future["ds"] > last_date
         for i, idx in enumerate(future[mask].index, start=1):
-            future.loc[idx, final_col] = max(0.0, proj_val + slope * i)
+            damped_slope = slope * (damping ** i)
+            future.loc[idx, final_col] = max(0.0, proj_val + damped_slope * i)
 
     logger.info(
         f"Future DF: {len(future)} rows ({len(train_df)} hist + {periods} forecast) | "
