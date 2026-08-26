@@ -30,6 +30,34 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _PROCESSED = _PROJECT_ROOT / "data" / "processed"
 
+HOLDOUT_DAYS = 7
+
+
+def _get_last_promotion_time(metric: str) -> "datetime | None":
+    """Return the last_trained timestamp for this metric, or None."""
+    import os
+    from datetime import datetime, timezone
+    from supabase import create_client
+
+    try:
+        client = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+        )
+        result = (
+            client.table("model_metadata")
+            .select("last_trained")
+            .eq("metric", metric)
+            .is_("bank_name", "null")
+            .execute()
+        )
+        if result.data and result.data[0].get("last_trained"):
+            ts = result.data[0]["last_trained"]
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        pass
+    return None
+
 
 def _get_current_mape(metric: str, bank_name: str | None = None) -> float | None:
     """Read the current model's CV MAPE from model_metadata in Supabase."""
@@ -71,6 +99,22 @@ def retrain_aggregate(
     from src.modelling.data_prep import load_all, build_master, build_training_df
 
     config = CC_CONFIG if "cc" in metric else DC_CONFIG
+
+    # D8: locked holdout — reject retrain if last promotion was < 7 days ago
+    last_promoted = _get_last_promotion_time(metric)
+    if last_promoted is not None:
+        from datetime import datetime, timezone
+        days_since = (datetime.now(timezone.utc) - last_promoted).days
+        if days_since < HOLDOUT_DAYS:
+            logger.info(
+                f"Holdout active for {metric}: last promoted {days_since}d ago, "
+                f"minimum {HOLDOUT_DAYS}d — skipping retrain"
+            )
+            return {
+                "promoted": False, "old_mape": None, "new_mape": None,
+                "regressors_used": [], "skipped": "holdout",
+            }
+
     old_mape = _get_current_mape(metric)
 
     if old_mape is None:
