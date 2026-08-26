@@ -127,7 +127,7 @@ Bank forecasts are summed and reconciled against the aggregate total (residual a
 
 ### Cross-Validation
 
-Walk-forward CV: 48-month initial window, 6-month horizon, 6-month step. Model is always tested on data it has never seen.
+Walk-forward CV: 48-month initial window, 12-month horizon, 6-month step. Model is always tested on data it has never seen.
 
 ---
 
