@@ -363,11 +363,11 @@ def _build_conformal_intervals(
         total_w = sum(weights.get(k, 0) for k in forecasts if weights.get(k, 0) > 0)
         if total_w <= 0:
             total_w = len(forecasts)
-            ens = sum(fc for fc in forecasts.values()) / total_w
+            ens = sum(fc[:test_len] for fc in forecasts.values()) / total_w
         else:
             ens = np.zeros(test_len)
             for name, fc_arr in forecasts.items():
-                ens += (weights.get(name, 0) / total_w) * fc_arr
+                ens += (weights.get(name, 0) / total_w) * fc_arr[:test_len]
 
         for h in range(test_len):
             if test_y[h] != 0:
