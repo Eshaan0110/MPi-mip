@@ -381,8 +381,13 @@ def _build_conformal_intervals(
     for h in range(horizon):
         errs = pct_errors_by_step.get(h, [])
         if len(errs) >= 3:
-            lower_pcts[h] = np.percentile(errs, 5)
-            upper_pcts[h] = np.percentile(errs, 95)
+            # Finite-sample correction: widen quantiles by (1+1/n) factor
+            # With n~17 folds, raw 5/95 under-covers; use ~4.7/95.3 instead
+            n = len(errs)
+            lo_q = max(0, 5 / (1 + 1 / n))
+            hi_q = min(100, 100 - 5 / (1 + 1 / n))
+            lower_pcts[h] = np.percentile(errs, lo_q)
+            upper_pcts[h] = np.percentile(errs, hi_q)
             last_good_lower = lower_pcts[h]
             last_good_upper = upper_pcts[h]
         else:
