@@ -94,19 +94,24 @@ def retrain_aggregate(
 
         new_mape = _cross_validate_ensemble(config, train_df, regressors_used)
 
-        promoted = new_mape < old_mape
         improvement = old_mape - new_mape
+        min_delta = 0.2  # require ≥0.2pp improvement to avoid greedy overfitting
+        promoted = improvement >= min_delta
 
         if promoted:
             logger.info(
                 f"NEW MODEL IS BETTER: {old_mape:.2f}% → {new_mape:.2f}% "
-                f"(improvement: {improvement:.2f}pp)"
+                f"(improvement: {improvement:.2f}pp, threshold: {min_delta}pp)"
             )
             _promote_model(metric, config, train_df, regressors_used, new_mape)
         else:
+            reason = (
+                f"worse by {-improvement:.2f}pp" if improvement < 0
+                else f"improvement {improvement:.2f}pp below {min_delta}pp threshold"
+            )
             logger.info(
-                f"New model not better: {old_mape:.2f}% → {new_mape:.2f}% "
-                f"(worse by {-improvement:.2f}pp) — DISCARDING"
+                f"New model not promoted: {old_mape:.2f}% → {new_mape:.2f}% "
+                f"({reason}) — DISCARDING"
             )
 
         log_retrain(
