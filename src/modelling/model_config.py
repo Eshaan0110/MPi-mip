@@ -8,7 +8,7 @@ Structure:
   PROPHET_BASE      — shared Prophet hyperparameters
   CC_CONFIG         — credit card model specification
   DC_CONFIG         — debit card model specification
-  CV_CONFIG         — cross-validation settings (Rahul: initial>=48m, horizon=6m, step=6m)
+  CV_CONFIG         — cross-validation settings (initial=48m, horizon=12m, step=6m)
   FORECAST_CONFIG   — forward forecast settings
   STRUCTURAL_EVENTS — changepoints / dummy regressors with confirmed dates
 """
@@ -28,7 +28,7 @@ PROPHET_BASE = {
 
 
 # ── Cross-validation settings ──────────────────────────────────────────────
-# Rahul: initial window >= 48 months, horizon 6 months, step 6 months
+# initial window 48 months, horizon 12 months, step 6 months
 CV_CONFIG = {
     "initial":  "1461 days",   # 48 months ≈ 4 years
     "period":   "182 days",    # 6-month step
