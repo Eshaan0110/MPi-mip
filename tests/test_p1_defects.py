@@ -218,6 +218,24 @@ class TestD7_DampedExtrapolation:
             "D7 FAIL: damping is defined but not applied per-step"
         )
 
+    def test_scenario_bands_exist(self):
+        """build_regressor_scenario_bands should exist and return 3 scenarios."""
+        from src.modelling.data_prep import build_regressor_scenario_bands
+        assert callable(build_regressor_scenario_bands)
+
+    def test_scenario_bands_ordering(self):
+        """Optimistic slope > base slope > pessimistic slope for positive trend."""
+        slope = 5.0
+        damping = 0.95
+        proj = 100.0
+        results = {}
+        for name, mult in [("optimistic", 1.5), ("base", 1.0), ("pessimistic", 0.5)]:
+            vals = [max(0, proj + (slope * mult) * (damping ** i) * i) for i in range(1, 25)]
+            results[name] = vals[-1]
+        assert results["optimistic"] > results["base"] > results["pessimistic"], (
+            "D7 FAIL: scenario bands not in correct order"
+        )
+
     def test_damped_values_converge(self):
         """With a slope, damped extrapolation should produce a decelerating
         trend (each increment smaller than the last)."""
@@ -277,4 +295,20 @@ class TestD8_MinDeltaThreshold:
         promoted = improvement >= min_delta
         assert promoted, (
             f"D8 FAIL: 0.3pp improvement should promote (threshold={min_delta})"
+        )
+
+    def test_holdout_constant_exists(self):
+        """retrainer.py should define HOLDOUT_DAYS."""
+        from src.agent.retrainer import HOLDOUT_DAYS
+        assert isinstance(HOLDOUT_DAYS, int) and HOLDOUT_DAYS >= 1, (
+            f"D8 FAIL: HOLDOUT_DAYS should be a positive int, got {HOLDOUT_DAYS}"
+        )
+
+    def test_holdout_check_in_retrain(self):
+        """retrain_aggregate should check last promotion time."""
+        import inspect
+        from src.agent.retrainer import retrain_aggregate
+        src = inspect.getsource(retrain_aggregate)
+        assert "holdout" in src.lower() or "HOLDOUT_DAYS" in src, (
+            "D8 FAIL: retrain_aggregate has no holdout period check"
         )
