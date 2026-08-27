@@ -56,6 +56,16 @@ _PROCESSED    = _PROJECT_ROOT / "data" / "processed"
 _PROCESSED.mkdir(parents=True, exist_ok=True)
 
 
+def _get_regressor_cols(config: dict, df: pd.DataFrame) -> list[str]:
+    """Return the list of regressor column names present in df for this config."""
+    cols = []
+    for spec in config.get("regressors", []):
+        col = f"{spec.col}_lag{spec.lag}" if spec.lag > 0 else spec.col
+        if col in df.columns:
+            cols.append(col)
+    return cols
+
+
 # ── Model builder ──────────────────────────────────────────────────────────
 
 def build_prophet_model(config: dict, train_df: pd.DataFrame):
@@ -228,6 +238,28 @@ def _fit_arima_forecast(y: np.ndarray, horizon: int) -> np.ndarray | None:
         return None
 
 
+def _fit_arimax_forecast(
+    y: np.ndarray,
+    exog_train: np.ndarray | None,
+    exog_future: np.ndarray | None,
+    horizon: int,
+) -> np.ndarray | None:
+    """Fit ARIMAX(1,1,1) with exogenous regressors and return h-step forecast."""
+    if exog_train is None or exog_future is None:
+        return None
+    if exog_train.shape[0] != len(y):
+        return None
+    if exog_future.shape[0] < horizon:
+        return None
+    try:
+        m = ARIMA(y, order=(1, 1, 1), exog=exog_train)
+        fit = m.fit()
+        return fit.forecast(steps=horizon, exog=exog_future[:horizon])
+    except Exception as e:
+        logger.warning(f"  ARIMAX forecast failed: {e}")
+        return None
+
+
 def _fit_ets_forecast(y: np.ndarray, horizon: int) -> np.ndarray | None:
     """Fit damped additive ETS and return h-step forecast, or None on failure."""
     try:
@@ -242,8 +274,9 @@ def _fit_ets_forecast(y: np.ndarray, horizon: int) -> np.ndarray | None:
 
 def _estimate_ensemble_weights(
     y: np.ndarray, config: dict, horizon: int,
+    train_df: pd.DataFrame | None = None,
 ) -> dict[str, float]:
-    """Re-estimate ensemble weights from walk-forward CV on ARIMA+ETS.
+    """Re-estimate ensemble weights from walk-forward CV on ARIMA+ARIMAX+ETS.
 
     Uses grid search over weight combinations, minimising mean MAPE across
     all CV folds. Prophet is excluded from the CV loop for speed — its weight
@@ -257,12 +290,17 @@ def _estimate_ensemble_weights(
 
     model_key = "cc" if "credit" in config.get("name", "") else "dc"
     default_weights = ENSEMBLE_WEIGHTS[model_key].copy()
-    prophet_floor = default_weights.get("prophet", 0.35)
+    prophet_floor = default_weights.get("prophet", 0.30)
 
     if h_months < 1:
         return default_weights
 
+    # Get regressor columns for ARIMAX
+    reg_cols = _get_regressor_cols(config, train_df) if train_df is not None else []
+    has_arimax = len(reg_cols) > 0
+
     arima_preds_all: list[np.ndarray] = []
+    arimax_preds_all: list[np.ndarray] = []
     ets_preds_all: list[np.ndarray] = []
     actuals_all: list[np.ndarray] = []
 
@@ -271,39 +309,49 @@ def _estimate_ensemble_weights(
         test_y = y[start:start + h_months]
         arima_fc = _fit_arima_forecast(train_y, h_months)
         ets_fc = _fit_ets_forecast(train_y, h_months)
+
+        arimax_fc = None
+        if has_arimax and train_df is not None:
+            exog_train = train_df[reg_cols].values[:start]
+            exog_future = train_df[reg_cols].values[start:start + h_months]
+            if len(exog_future) >= h_months:
+                arimax_fc = _fit_arimax_forecast(train_y, exog_train, exog_future, h_months)
+
         if arima_fc is not None and ets_fc is not None:
             arima_preds_all.append(arima_fc)
             ets_preds_all.append(ets_fc)
+            arimax_preds_all.append(arimax_fc if arimax_fc is not None else arima_fc)
             actuals_all.append(test_y)
 
     if len(actuals_all) < 2:
         return default_weights
 
-    best_mape = float("inf")
-    best_arima_w = default_weights.get("arima", 0.5)
     remaining = 1.0 - prophet_floor
+    best_mape = float("inf")
+    best_weights = {"arima": remaining / 3, "arimax": remaining / 3, "ets": remaining / 3}
 
-    for arima_share in np.arange(0.0, 1.05, 0.05):
-        ets_share = 1.0 - arima_share
-        w_arima = remaining * arima_share
-        w_ets = remaining * ets_share
-        mapes = []
-        for a_fc, e_fc, act in zip(arima_preds_all, ets_preds_all, actuals_all):
-            ens = w_arima * a_fc + w_ets * e_fc
-            # Scale by (1 - prophet_floor) since Prophet isn't in this CV
-            mape = np.mean(np.abs((act - ens / (1 - prophet_floor)) / act)) * 100
-            mapes.append(mape)
-        avg_mape = np.mean(mapes)
-        if avg_mape < best_mape:
-            best_mape = avg_mape
-            best_arima_w = remaining * arima_share
+    # 3-way grid: ARIMA, ARIMAX, ETS shares (step 0.1 for speed)
+    step_size = 0.1
+    for arima_s in np.arange(0.0, 1.01, step_size):
+        for arimax_s in np.arange(0.0, 1.01 - arima_s, step_size):
+            ets_s = 1.0 - arima_s - arimax_s
+            if ets_s < -0.01:
+                continue
+            ets_s = max(0, ets_s)
+            w_a = remaining * arima_s
+            w_ax = remaining * arimax_s
+            w_e = remaining * ets_s
+            mapes = []
+            for a, ax, e, act in zip(arima_preds_all, arimax_preds_all, ets_preds_all, actuals_all):
+                ens = w_a * a + w_ax * ax + w_e * e
+                m = np.mean(np.abs((act - ens / (1 - prophet_floor)) / act)) * 100
+                mapes.append(m)
+            avg_mape = np.mean(mapes)
+            if avg_mape < best_mape:
+                best_mape = avg_mape
+                best_weights = {"arima": round(w_a, 2), "arimax": round(w_ax, 2), "ets": round(w_e, 2)}
 
-    best_ets_w = remaining - best_arima_w
-    new_weights = {
-        "prophet": prophet_floor,
-        "arima": round(best_arima_w, 2),
-        "ets": round(best_ets_w, 2),
-    }
+    new_weights = {"prophet": prophet_floor, **best_weights}
     logger.info(
         f"  Ensemble weights re-estimated: {new_weights} "
         f"(CV MAPE: {best_mape:.2f}%, prev: {default_weights})"
@@ -334,6 +382,9 @@ def _build_conformal_intervals(
     model_key = "cc" if "credit" in config.get("name", "") else "dc"
     weights = ENSEMBLE_WEIGHTS[model_key]
 
+    reg_cols = _get_regressor_cols(config, train_df)
+    has_arimax = len(reg_cols) > 0
+
     pct_errors_by_step: dict[int, list[float]] = {h: [] for h in range(horizon)}
 
     for start in range(initial_months, len(y) - 1, step_months):
@@ -349,6 +400,16 @@ def _build_conformal_intervals(
             forecasts["arima"] = fit.forecast(steps=test_len)
         except Exception:
             pass
+        if has_arimax:
+            try:
+                exog_tr = train_df[reg_cols].values[:start]
+                exog_te = train_df[reg_cols].values[start:start + test_len]
+                if len(exog_te) >= test_len:
+                    ax_fc = _fit_arimax_forecast(train_y, exog_tr, exog_te, test_len)
+                    if ax_fc is not None:
+                        forecasts["arimax"] = ax_fc
+            except Exception:
+                pass
         try:
             m = ExponentialSmoothing(train_y, trend="add", seasonal="add",
                                     seasonal_periods=12, damped_trend=True)
@@ -407,8 +468,8 @@ def _build_conformal_intervals(
 # Per-series weights reflect that DC's ETS adds no value (ARIMA dominates),
 # while CC benefits from ETS diversification.
 ENSEMBLE_WEIGHTS = {
-    "cc": {"prophet": 0.35, "arima": 0.39, "ets": 0.26},
-    "dc": {"prophet": 0.35, "arima": 0.65, "ets": 0.00},
+    "cc": {"prophet": 0.30, "arima": 0.25, "arimax": 0.20, "ets": 0.25},
+    "dc": {"prophet": 0.30, "arima": 0.30, "arimax": 0.20, "ets": 0.20},
 }
 
 
@@ -438,6 +499,15 @@ def run_forecast(
     # --- ARIMA forecast ---
     arima_yhat = _fit_arima_forecast(y, horizon)
 
+    # --- ARIMAX forecast (ARIMA with regressors) ---
+    reg_cols = _get_regressor_cols(config, train_df)
+    if reg_cols:
+        exog_train = train_df[reg_cols].values
+        future_reg = future_df[future_df["ds"] > last_hist][reg_cols].values
+        arimax_yhat = _fit_arimax_forecast(y, exog_train, future_reg, horizon)
+    else:
+        arimax_yhat = None
+
     # --- ETS forecast ---
     ets_yhat = _fit_ets_forecast(y, horizon)
 
@@ -447,6 +517,8 @@ def run_forecast(
         forecasts["prophet"] = prophet_yhat
     if arima_yhat is not None and len(arima_yhat) == horizon:
         forecasts["arima"] = arima_yhat
+    if arimax_yhat is not None and len(arimax_yhat) == horizon:
+        forecasts["arimax"] = arimax_yhat
     if ets_yhat is not None and len(ets_yhat) == horizon:
         forecasts["ets"] = ets_yhat
 
@@ -455,7 +527,7 @@ def run_forecast(
 
     # Re-estimate ensemble weights from CV each run (D6 fix)
     model_key = "cc" if "credit" in config["name"] else "dc"
-    weights = _estimate_ensemble_weights(y, config, horizon)
+    weights = _estimate_ensemble_weights(y, config, horizon, train_df=train_df)
     total_w = sum(weights[k] for k in forecasts if weights.get(k, 0) > 0)
     ensemble = np.zeros(horizon)
     for name, fc_arr in forecasts.items():
