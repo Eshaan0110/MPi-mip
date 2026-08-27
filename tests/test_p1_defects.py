@@ -187,6 +187,7 @@ class TestD6_DynamicWeights:
 
         assert "prophet" in weights, "D6 FAIL: no 'prophet' key in weights"
         assert "arima" in weights, "D6 FAIL: no 'arima' key in weights"
+        assert "arimax" in weights, "D6 FAIL: no 'arimax' key in weights"
         assert "ets" in weights, "D6 FAIL: no 'ets' key in weights"
         total = sum(weights.values())
         assert abs(total - 1.0) < 0.05, f"D6 FAIL: weights sum to {total}, not ~1.0"
