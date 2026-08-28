@@ -159,6 +159,7 @@ CC_CONFIG = {
     "structural_events": ["demonetisation", "covid_shock", "rbi_credit_tightening"],
     "extra_changepoints": [],  # GFC changepoint removed (pre training_start)
     "output_stem": "forecast_cc",
+    "log_transform": False,
 }
 
 
@@ -210,6 +211,7 @@ DC_CONFIG = {
     ],
     "extra_changepoints": ["2019-11-01"],  # PSI definitional change — series break
     "output_stem": "forecast_dc",
+    "log_transform": False,
 }
 
 
