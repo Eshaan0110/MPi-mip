@@ -62,6 +62,45 @@ warnings.filterwarnings("ignore", module="cmdstanpy")
 warnings.filterwarnings("ignore", module="prophet")
 warnings.filterwarnings("ignore", category=FutureWarning, module="statsmodels")
 
+
+def _compute_pooled_seasonal(
+    bank_dfs: dict[str, pd.DataFrame],
+) -> pd.Series:
+    """Compute pooled seasonal index across all banks (P2.3).
+
+    For each bank, normalize the series by its rolling 12-month mean,
+    then average the month-of-year residuals across all banks.
+    Returns a Series indexed by month (1-12) with the pooled seasonal factor.
+    Banks with <24 months of data are excluded.
+    """
+    all_factors: dict[int, list[float]] = {m: [] for m in range(1, 13)}
+
+    for bank_name, df in bank_dfs.items():
+        if df is None or len(df) < 24:
+            continue
+        y = df.set_index("ds")["y"].sort_index()
+        rolling_mean = y.rolling(12, center=True, min_periods=6).mean()
+        ratio = y / rolling_mean
+        ratio = ratio.dropna()
+        for month in range(1, 13):
+            vals = ratio[ratio.index.month == month].values
+            if len(vals) >= 2:
+                all_factors[month].extend(vals.tolist())
+
+    seasonal = pd.Series({m: np.mean(v) if v else 1.0 for m, v in all_factors.items()})
+    # Normalize so factors average to 1.0
+    seasonal = seasonal / seasonal.mean()
+    return seasonal
+
+
+def _add_pooled_seasonal_regressor(
+    df: pd.DataFrame, pooled_seasonal: pd.Series,
+) -> pd.DataFrame:
+    """Add pooled_seasonal column to a Prophet-ready DataFrame."""
+    df = df.copy()
+    df["pooled_seasonal"] = df["ds"].dt.month.map(pooled_seasonal).fillna(1.0)
+    return df
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _PROCESSED    = _PROJECT_ROOT / "data" / "processed"
 
@@ -135,6 +174,11 @@ def _fit_bank_model(
         logger.debug(f"    No cap defined for {bank_name}/{card_type}, falling back to linear")
 
     m = Prophet(**cfg)
+
+    # Register pooled seasonal regressor (P2.3)
+    if "pooled_seasonal" in bank_df.columns:
+        m.add_regressor("pooled_seasonal", standardize=True, mode="multiplicative")
+        logger.debug(f"    Regressor added: pooled_seasonal (P2.3)")
 
     # Register merger dummy columns as regressors
     merger_cols = [c for c in bank_df.columns if c.startswith("merger_")]
@@ -476,6 +520,11 @@ def _forecast_bank(
         future["cap"]   = cap_val
         future["floor"] = 0.0
 
+    # Add pooled seasonal to future dates (P2.3)
+    if "pooled_seasonal" in bank_df.columns:
+        month_to_seasonal = bank_df.groupby(bank_df["ds"].dt.month)["pooled_seasonal"].first()
+        future["pooled_seasonal"] = future["ds"].dt.month.map(month_to_seasonal).fillna(1.0)
+
     # Carry forward merger dummy columns into future rows
     merger_cols = [c for c in bank_df.columns if c.startswith("merger_")]
     for col in merger_cols:
@@ -615,6 +664,70 @@ def _run_residual_model(
 
 
 # ── Aggregation + cross-check ──────────────────────────────────────────────
+
+def _reconcile_mint(
+    bank_forecasts: list[pd.DataFrame],
+    residual_fc: pd.DataFrame,
+    card_type: str,
+) -> list[pd.DataFrame]:
+    """MinT-style top-down reconciliation (P2.4).
+
+    Ensures bank forecasts + residual sum to the PSI aggregate forecast.
+    Uses proportional scaling: each bank's share of the bottom-up total
+    is preserved, but the level is adjusted to match the aggregate.
+
+    If aggregate forecast is unavailable, returns forecasts unchanged.
+    """
+    agg_path = _PROCESSED / f"forecast_{card_type}.parquet"
+    if not agg_path.exists():
+        logger.info(f"  [{card_type.upper()}] No aggregate forecast found — skipping MinT reconciliation")
+        return bank_forecasts
+
+    agg_fc = pd.read_parquet(agg_path)
+    agg_fc["date"] = pd.to_datetime(agg_fc["date"]).dt.to_period("M").dt.to_timestamp()
+
+    # Bottom-up total
+    all_fc = bank_forecasts + [residual_fc]
+    combined = pd.concat(all_fc, ignore_index=True)
+    bottom_up = combined.groupby("date")["forecast"].sum().reset_index()
+    bottom_up.columns = ["date", "bottom_up"]
+
+    # Merge with aggregate (aggregate is in lakh, bank forecasts in cards)
+    # Convert aggregate lakh to cards for comparison
+    agg_col = "forecast_lakh" if "forecast_lakh" in agg_fc.columns else "forecast"
+    agg_subset = agg_fc[["date", agg_col]].copy()
+    agg_subset.columns = ["date", "aggregate"]
+    agg_subset["aggregate_cards"] = agg_subset["aggregate"] * 1e5
+
+    merged = bottom_up.merge(agg_subset[["date", "aggregate_cards"]], on="date", how="inner")
+
+    if merged.empty:
+        logger.info(f"  [{card_type.upper()}] No date overlap for reconciliation")
+        return bank_forecasts
+
+    # Compute scaling factors per date
+    merged["scale"] = merged["aggregate_cards"] / merged["bottom_up"]
+    merged["scale"] = merged["scale"].clip(0.5, 2.0)  # cap extreme adjustments
+    scale_map = dict(zip(merged["date"], merged["scale"]))
+
+    # Apply proportional scaling to each bank
+    reconciled = []
+    for fc in bank_forecasts:
+        fc_r = fc.copy()
+        for col in ["forecast", "forecast_lower", "forecast_upper"]:
+            fc_r[col] = fc_r.apply(
+                lambda row: row[col] * scale_map.get(row["date"], 1.0), axis=1
+            )
+        reconciled.append(fc_r)
+
+    n_dates = len(scale_map)
+    avg_scale = np.mean(list(scale_map.values()))
+    logger.info(
+        f"  [{card_type.upper()}] MinT reconciliation applied: "
+        f"{n_dates} dates, avg scale factor {avg_scale:.3f}"
+    )
+    return reconciled
+
 
 def _aggregate_groundup(
     bank_forecasts: list[pd.DataFrame],
@@ -796,6 +909,13 @@ def run_bank_model(
     bank_dfs    = data["bank_dfs"]
     residual_df = data["residual_df"]
 
+    # Compute pooled seasonal index across all banks (P2.3)
+    pooled_seasonal = _compute_pooled_seasonal(bank_dfs)
+    logger.info(
+        f"  [{card_type.upper()}] Pooled seasonal computed from {len(bank_dfs)} banks "
+        f"(range: {pooled_seasonal.min():.3f}–{pooled_seasonal.max():.3f})"
+    )
+
     bank_forecasts: list[pd.DataFrame] = []
     cv_results:     list[dict]         = []
 
@@ -805,6 +925,9 @@ def run_bank_model(
         if df is None:
             logger.warning(f"  [{card_type.upper()}] {bank_name}: skipped (insufficient data)")
             continue
+
+        # Add pooled seasonal regressor (P2.3)
+        df = _add_pooled_seasonal_regressor(df, pooled_seasonal)
 
         logger.info(f"\n  [{card_type.upper()}] {bank_name} ({len(df)} months)")
 
@@ -830,6 +953,9 @@ def run_bank_model(
 
     # Residual model
     residual_fc = _run_residual_model(residual_df, card_type, bank_dir)
+
+    # MinT reconciliation (P2.4) — adjust bank forecasts to match aggregate
+    bank_forecasts = _reconcile_mint(bank_forecasts, residual_fc, card_type)
 
     # Aggregate
     groundup = _aggregate_groundup(bank_forecasts, residual_fc, card_type, groundup_dir)
