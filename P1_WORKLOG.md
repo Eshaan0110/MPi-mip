@@ -211,9 +211,171 @@ CC (where std doubled as the series grew from 183→1194).
 but both configs set to `False`. Can be enabled per-series if exponential-growth data
 (like UPI) is added later.
 
+### P2.3 Pooled Bank Seasonal Index — Verified on Real Data
+
+Added `_compute_pooled_seasonal()` to bank_model.py. For each bank, normalizes the series
+by its rolling 12-month mean, then averages month-of-year residuals across all banks.
+
+**Real data results:**
+| Card Type | Banks Used | Seasonal Range | Effect |
+|-----------|-----------|----------------|--------|
+| CC | 12 banks | 0.999–1.002 | Very flat — CC outstanding has weak seasonality |
+| DC | 16 banks | 0.997–1.004 | Very flat — DC outstanding also weak seasonality |
+
+The pooled seasonal is registered as a multiplicative regressor in each bank's Prophet model.
+With outstanding data (not transaction volume), seasonality is weak — the regressor range
+is near 1.0 (±0.2–0.4%). This is expected: card outstanding reflects cumulative issuance,
+not monthly spending patterns. The infrastructure will matter more if txn volume bank models
+are added later.
+
+### P2.4 MinT Reconciliation — Verified on Real Data
+
+Added `_reconcile_mint()` to bank_model.py. After individual bank forecasts, proportional
+scaling ensures bank forecasts sum to the aggregate forecast. Scale factors capped at [0.5, 2.0].
+
+**Real data results:**
+| Card Type | Forecast Dates | Avg Scale Factor |
+|-----------|---------------|------------------|
+| CC | 13 dates | 0.969 |
+
+Scale factor 0.969 means banks collectively over-forecast by ~3.1% — MinT scales them down
+proportionally. This is a small adjustment, confirming the bank models are already reasonably
+coherent with the aggregate.
+
+### P2.5 UPI Ensemble Forecast — Verified on Real Data
+
+Rebuilt txn_volume_model.py to blend Prophet + ARIMA + ETS instead of Prophet-only.
+Added `_fit_arima_fc()`, `_fit_ets_fc()`, `_estimate_txn_weights()` (walk-forward CV).
+
+**Real data results (CC volume as representative):**
+| Model | Weight | Mean Forecast |
+|-------|--------|--------------|
+| Prophet | 0.50 | 5083.2 |
+| ARIMA | 0.00 | 5632.3 |
+| ETS | 0.50 | 6131.5 |
+| **Ensemble** | — | **5607.3** |
+
+CV MAPE: 16.07%. ARIMA got 0% weight — ETS and Prophet complement each other better.
+12-month forecast range: 5218–6075 lakh transactions.
+
+### P2.6 Direct Multi-Horizon — Verified on Real Data
+
+Added `_fit_direct_multihorizon()` to aggregate_model.py. Trains separate ARIMA models
+for short (1-6m), medium (7-12m), and long (13-24m) horizons with 2-month linear blending.
+
+**Real data results:**
+| Model | CC Mean | DC Mean |
+|-------|---------|---------|
+| Recursive ARIMA | 1277.9 | 9862.3 |
+| Direct multi-horizon | 1235.9 | — |
+| CV weight | 0% | 0% |
+
+Direct got 0% weight — the recursive ARIMA doesn't degrade enough over 24 months for
+the segmented approach to improve CV MAPE. Infrastructure is in place for when longer
+horizons or more volatile series are added.
+
+### P2.3 Bug Fix
+- `_compute_pooled_seasonal()` crashed on `None` bank DataFrames (banks skipped due to
+  insufficient data). Fixed: added `if df is None` guard.
+
 ### Test Suite
 - P1 tests: 21/21 passing
 - P2.1 tests: 4/4 passing (log_transform parameter acceptance)
 - P2.2 tests: 6/6 passing (ARIMAX integration)
+- P2.3 tests: 2/2 passing (pooled seasonal computation)
+- P2.4 tests: 1/1 passing (MinT reconciliation)
+- P2.5 tests: 3/3 passing (UPI ensemble)
+- P2.6 tests: 4/4 passing (direct multi-horizon)
 - P2.7 tests: 9/9 passing (metrics module)
-- Total: 40/40 passing (11.5s)
+- P3.1 tests: 3/3 passing (vintage scoring)
+- P3.2 tests: 5/5 passing (agent ablation)
+- P3.3 tests: 5/5 passing (regressor candidates)
+- P3.4 tests: 3/3 passing (data versioning)
+- Total: 66/66 passing (15.6s)
+
+## P3 Results
+
+### P3.4 Data Versioning — Working
+
+Created `src/modelling/data_versioning.py`:
+- `snapshot_processed()` — copies all parquet/csv/json from data/processed/ into
+  data/vintages/YYYY-MM-DD/
+- `list_vintages()` — sorted list of snapshots (newest first)
+- `load_vintage()` — load specific file from a snapshot
+- `get_latest_vintage()` — convenience for most recent
+
+First snapshot taken: 2026-08-28 (61 items).
+
+### P3.1 Vintage Scoring — Working
+
+Created `src/modelling/vintage_scoring.py`:
+- `save_forecast_vintage()` — saves forecast + metadata with vintage label
+- `score_vintage()` — scores a forecast against first-release actuals
+- `score_all_vintages()` — scores all saved forecast vintages
+- `_load_first_release_actuals()` — finds earliest vintage containing each date's actual
+
+**Why this matters:** RBI revises historical data. The pipeline overwrites in place.
+Vintage scoring measures real-time skill — the accuracy at the time decisions were made,
+not after RBI cleaned up the numbers. This is what Rahul's brief calls "real-time skill."
+
+**Status:** Infrastructure built. Will accumulate scoring data as monthly runs happen.
+First meaningful scores will appear after 1-2 months of vintages.
+
+### P3.3 Regressor Candidates — All Failed Granger Gate
+
+Created `src/modelling/regressor_candidates.py` with Granger-gated evaluation pipeline.
+
+**Candidates tested:**
+| Candidate | Target | p-value | F-stat | Lag | Gate |
+|-----------|--------|---------|--------|-----|------|
+| CPI inflation | CC outstanding | 0.1417 | 1.68 | 5 | FAIL |
+| CPI inflation | DC outstanding | 0.5692 | 0.74 | 4 | FAIL |
+| Festive calendar | CC outstanding | 0.4143 | 1.02 | 6 | FAIL |
+| Festive calendar | DC outstanding | 0.0545 | 2.36 | 4 | FAIL |
+| UPI P2M share | DC outstanding | 0.2874 | 1.28 | 4 | FAIL |
+
+**Why they all failed (and why that's the correct outcome):**
+
+1. **CPI inflation** (p=0.14 CC, p=0.57 DC): Inflation affects spending, not card
+   issuance. Card outstanding is a stock variable (cumulative cards issued minus
+   cancelled). CPI affects flow (transactions), not stock. The series' own trend
+   already captures the macro growth that CPI would proxy for.
+
+2. **Festive calendar** (p=0.41 CC, p=0.05 DC): Same stock-vs-flow issue. Festive
+   spending drives transaction volumes, not outstanding card counts. Prophet's built-in
+   yearly seasonality already captures the weak seasonal pattern in outstanding data.
+   DC came close (p=0.054) — worth re-testing on txn volume models later.
+
+3. **UPI P2M share** (p=0.29 DC): The existing DC model already has the UPI inflection
+   changepoint (Jan 2022) and DC POS volume as regressors. P2M share is collinear with
+   these — adding it doesn't provide independent predictive power.
+
+**GST collections:** Not tested — data not yet in the pipeline. Can be added when
+GST data is scraped and ingested.
+
+**None added to configs** — the Granger gate correctly prevented adding noise regressors.
+
+### P3.2 Agent Ablation — First Run Complete
+
+Created `src/modelling/agent_ablation.py` with pre-registered protocol:
+- 12-month minimum experiment duration
+- 0.2pp MAPE decision threshold
+- Same CV folds for both arms
+- Results logged to data/processed/ablation_registry.json
+
+**First ablation run (ARIMA+ETS arms, same folds):**
+| Model | Full MAPE | Ablated MAPE | Delta | Verdict |
+|-------|-----------|-------------|-------|---------|
+| CC | 6.52% | 6.52% | 0.00pp | demote_agent |
+| DC | 3.66% | 3.66% | 0.00pp | demote_agent |
+
+**Why Δ=0 (and why the ablation design needs refinement):**
+The current ablation compares ARIMA+ETS with vs without regressors. But regressors
+only affect Prophet, not ARIMA/ETS. So both arms are identical. The proper ablation
+needs to include Prophet in the loop — comparing full Prophet+ARIMA+ETS ensemble
+(with regressors) vs Prophet+ARIMA+ETS (without regressors). This requires running
+Prophet twice per fold, which is expensive but necessary for a fair test.
+
+**Status:** Framework built and first run logged. The ablation protocol is pre-registered
+and the registry is accumulating runs. Need to enhance the ablation to include Prophet
+in the CV loop for a meaningful comparison.
