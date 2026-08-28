@@ -186,7 +186,34 @@ Created `src/modelling/metrics.py` with:
 - `score_forecast()` — all point metrics in one call
 - `score_intervals()` — all interval metrics in one call
 
+### P2.1 Log-Space Modelling — Investigated and Rejected
+
+**Hypothesis:** Fitting ARIMA/ETS on log(y) instead of y should stabilize variance for
+CC (where std doubled as the series grew from 183→1194).
+
+**Data analysis:**
+- CC skew=0.469 → log-space skew=-0.092 (near-symmetric) — looked promising
+- CC first-half std=98.3, second-half std=215.2 — clear heteroscedasticity
+
+**Empirical test (CC, 15 CV folds, 24m horizon):**
+| Model | Raw MAPE | Log-space MAPE | Change |
+|-------|----------|---------------|--------|
+| ARIMA | 6.52% | 15.62% | +9.10pp WORSE |
+| ETS | 5.96% | 6.24% | +0.28pp neutral |
+| ARIMA+ETS | 6.19% | 10.13% | +3.94pp WORSE |
+
+**Why it failed:**
+1. ARIMA(1,1,1) already differences the series, which partially handles level shifts
+2. The σ²/2 bias correction assumes exactly log-normal residuals — it overshoots here
+3. CC grows linearly (~2x in 13 years), not exponentially, so log distortion exceeds benefit
+
+**Decision:** Infrastructure built (all three models accept `log_transform=True/False`),
+but both configs set to `False`. Can be enabled per-series if exponential-growth data
+(like UPI) is added later.
+
 ### Test Suite
 - P1 tests: 21/21 passing
-- P2 tests: 15/15 passing
-- Total: 36/36 passing (12.2s)
+- P2.1 tests: 4/4 passing (log_transform parameter acceptance)
+- P2.2 tests: 6/6 passing (ARIMAX integration)
+- P2.7 tests: 9/9 passing (metrics module)
+- Total: 40/40 passing (11.5s)
