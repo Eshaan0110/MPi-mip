@@ -62,6 +62,42 @@ class TestP2_2_ARIMAX:
 
 
 # ===================================================================
+# P2.1: Log-space modelling infrastructure
+# ===================================================================
+
+class TestP2_1_LogSpace:
+    def test_log_transform_flag_in_configs(self):
+        from src.modelling.model_config import CC_CONFIG, DC_CONFIG
+        assert "log_transform" in CC_CONFIG
+        assert "log_transform" in DC_CONFIG
+
+    def test_arima_accepts_log_transform(self):
+        from src.modelling.aggregate_model import _fit_arima_forecast
+        y = _make_monthly_series(84)
+        result = _fit_arima_forecast(y, 12, log_transform=True)
+        assert result is not None
+        assert len(result) == 12
+        assert np.all(result > 0), "Log-space ARIMA should produce positive forecasts"
+
+    def test_ets_accepts_log_transform(self):
+        from src.modelling.aggregate_model import _fit_ets_forecast
+        y = _make_monthly_series(84)
+        result = _fit_ets_forecast(y, 12, log_transform=True)
+        assert result is not None
+        assert len(result) == 12
+        assert np.all(result > 0)
+
+    def test_arimax_accepts_log_transform(self):
+        from src.modelling.aggregate_model import _fit_arimax_forecast
+        y = _make_monthly_series(84)
+        exog = np.random.RandomState(99).randn(84, 1)
+        exog_future = np.random.RandomState(99).randn(12, 1)
+        result = _fit_arimax_forecast(y, exog, exog_future, 12, log_transform=True)
+        assert result is not None
+        assert np.all(result > 0)
+
+
+# ===================================================================
 # P2.7: Scale-independent metrics
 # ===================================================================
 
