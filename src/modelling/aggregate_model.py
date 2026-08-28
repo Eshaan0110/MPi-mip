@@ -227,12 +227,19 @@ def log_model_coefficients(model, config: dict) -> pd.DataFrame:
 
 # ── Forecast ───────────────────────────────────────────────────────────────
 
-def _fit_arima_forecast(y: np.ndarray, horizon: int) -> np.ndarray | None:
+def _fit_arima_forecast(
+    y: np.ndarray, horizon: int, log_transform: bool = False,
+) -> np.ndarray | None:
     """Fit ARIMA(1,1,1) and return h-step forecast, or None on failure."""
     try:
-        m = ARIMA(y, order=(1, 1, 1))
+        y_fit = np.log(y) if log_transform else y
+        m = ARIMA(y_fit, order=(1, 1, 1))
         fit = m.fit()
-        return fit.forecast(steps=horizon)
+        fc = fit.forecast(steps=horizon)
+        if log_transform:
+            sigma2 = fit.resid.var()
+            fc = np.exp(fc + sigma2 / 2)
+        return fc
     except Exception as e:
         logger.warning(f"  ARIMA forecast failed: {e}")
         return None
@@ -243,6 +250,7 @@ def _fit_arimax_forecast(
     exog_train: np.ndarray | None,
     exog_future: np.ndarray | None,
     horizon: int,
+    log_transform: bool = False,
 ) -> np.ndarray | None:
     """Fit ARIMAX(1,1,1) with exogenous regressors and return h-step forecast."""
     if exog_train is None or exog_future is None:
@@ -252,21 +260,33 @@ def _fit_arimax_forecast(
     if exog_future.shape[0] < horizon:
         return None
     try:
-        m = ARIMA(y, order=(1, 1, 1), exog=exog_train)
+        y_fit = np.log(y) if log_transform else y
+        m = ARIMA(y_fit, order=(1, 1, 1), exog=exog_train)
         fit = m.fit()
-        return fit.forecast(steps=horizon, exog=exog_future[:horizon])
+        fc = fit.forecast(steps=horizon, exog=exog_future[:horizon])
+        if log_transform:
+            sigma2 = fit.resid.var()
+            fc = np.exp(fc + sigma2 / 2)
+        return fc
     except Exception as e:
         logger.warning(f"  ARIMAX forecast failed: {e}")
         return None
 
 
-def _fit_ets_forecast(y: np.ndarray, horizon: int) -> np.ndarray | None:
+def _fit_ets_forecast(
+    y: np.ndarray, horizon: int, log_transform: bool = False,
+) -> np.ndarray | None:
     """Fit damped additive ETS and return h-step forecast, or None on failure."""
     try:
-        m = ExponentialSmoothing(y, trend="add", seasonal="add",
+        y_fit = np.log(y) if log_transform else y
+        m = ExponentialSmoothing(y_fit, trend="add", seasonal="add",
                                   seasonal_periods=12, damped_trend=True)
         fit = m.fit(optimized=True)
-        return fit.forecast(steps=horizon)
+        fc = fit.forecast(steps=horizon)
+        if log_transform:
+            sigma2 = fit.resid.var()
+            fc = np.exp(fc + sigma2 / 2)
+        return fc
     except Exception as e:
         logger.warning(f"  ETS forecast failed: {e}")
         return None
@@ -292,6 +312,8 @@ def _estimate_ensemble_weights(
     default_weights = ENSEMBLE_WEIGHTS[model_key].copy()
     prophet_floor = default_weights.get("prophet", 0.30)
 
+    log_t = config.get("log_transform", False)
+
     if h_months < 1:
         return default_weights
 
@@ -307,15 +329,15 @@ def _estimate_ensemble_weights(
     for start in range(initial_months, len(y) - h_months + 1, step_months):
         train_y = y[:start]
         test_y = y[start:start + h_months]
-        arima_fc = _fit_arima_forecast(train_y, h_months)
-        ets_fc = _fit_ets_forecast(train_y, h_months)
+        arima_fc = _fit_arima_forecast(train_y, h_months, log_transform=log_t)
+        ets_fc = _fit_ets_forecast(train_y, h_months, log_transform=log_t)
 
         arimax_fc = None
         if has_arimax and train_df is not None:
             exog_train = train_df[reg_cols].values[:start]
             exog_future = train_df[reg_cols].values[start:start + h_months]
             if len(exog_future) >= h_months:
-                arimax_fc = _fit_arimax_forecast(train_y, exog_train, exog_future, h_months)
+                arimax_fc = _fit_arimax_forecast(train_y, exog_train, exog_future, h_months, log_transform=log_t)
 
         if arima_fc is not None and ets_fc is not None:
             arima_preds_all.append(arima_fc)
@@ -381,6 +403,7 @@ def _build_conformal_intervals(
 
     model_key = "cc" if "credit" in config.get("name", "") else "dc"
     weights = ENSEMBLE_WEIGHTS[model_key]
+    log_t = config.get("log_transform", False)
 
     reg_cols = _get_regressor_cols(config, train_df)
     has_arimax = len(reg_cols) > 0
@@ -394,29 +417,22 @@ def _build_conformal_intervals(
 
         # Build ensemble forecast for this fold
         forecasts: dict[str, np.ndarray] = {}
-        try:
-            m = ARIMA(train_y, order=(1, 1, 1))
-            fit = m.fit()
-            forecasts["arima"] = fit.forecast(steps=test_len)
-        except Exception:
-            pass
+        arima_fc = _fit_arima_forecast(train_y, test_len, log_transform=log_t)
+        if arima_fc is not None:
+            forecasts["arima"] = arima_fc
         if has_arimax:
             try:
                 exog_tr = train_df[reg_cols].values[:start]
                 exog_te = train_df[reg_cols].values[start:start + test_len]
                 if len(exog_te) >= test_len:
-                    ax_fc = _fit_arimax_forecast(train_y, exog_tr, exog_te, test_len)
+                    ax_fc = _fit_arimax_forecast(train_y, exog_tr, exog_te, test_len, log_transform=log_t)
                     if ax_fc is not None:
                         forecasts["arimax"] = ax_fc
             except Exception:
                 pass
-        try:
-            m = ExponentialSmoothing(train_y, trend="add", seasonal="add",
-                                    seasonal_periods=12, damped_trend=True)
-            fit = m.fit(optimized=True)
-            forecasts["ets"] = fit.forecast(steps=test_len)
-        except Exception:
-            pass
+        ets_fc = _fit_ets_forecast(train_y, test_len, log_transform=log_t)
+        if ets_fc is not None:
+            forecasts["ets"] = ets_fc
 
         if not forecasts:
             continue
@@ -487,6 +503,9 @@ def run_forecast(
     """
     horizon = FORECAST_CONFIG.get("periods", 24)
     y = train_df["y"].values
+    log_t = config.get("log_transform", False)
+    if log_t:
+        logger.info("  Log-space modelling enabled (P2.1)")
 
     # --- Prophet forecast ---
     future_df = build_future_df(train_df, config, master)
@@ -497,19 +516,19 @@ def run_forecast(
     prophet_dates = prophet_fc["ds"].values[:horizon]
 
     # --- ARIMA forecast ---
-    arima_yhat = _fit_arima_forecast(y, horizon)
+    arima_yhat = _fit_arima_forecast(y, horizon, log_transform=log_t)
 
     # --- ARIMAX forecast (ARIMA with regressors) ---
     reg_cols = _get_regressor_cols(config, train_df)
     if reg_cols:
         exog_train = train_df[reg_cols].values
         future_reg = future_df[future_df["ds"] > last_hist][reg_cols].values
-        arimax_yhat = _fit_arimax_forecast(y, exog_train, future_reg, horizon)
+        arimax_yhat = _fit_arimax_forecast(y, exog_train, future_reg, horizon, log_transform=log_t)
     else:
         arimax_yhat = None
 
     # --- ETS forecast ---
-    ets_yhat = _fit_ets_forecast(y, horizon)
+    ets_yhat = _fit_ets_forecast(y, horizon, log_transform=log_t)
 
     # --- Ensemble ---
     forecasts = {}
