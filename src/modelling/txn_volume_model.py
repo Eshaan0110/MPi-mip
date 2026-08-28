@@ -129,25 +129,151 @@ def _run_cv(model, config: dict) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _fit_arima_fc(y: np.ndarray, horizon: int) -> np.ndarray | None:
+    """ARIMA(1,1,1) forecast for txn volume models."""
+    from statsmodels.tsa.arima.model import ARIMA
+    try:
+        m = ARIMA(y, order=(1, 1, 1))
+        fit = m.fit()
+        return fit.forecast(steps=horizon)
+    except Exception:
+        return None
+
+
+def _fit_ets_fc(y: np.ndarray, horizon: int) -> np.ndarray | None:
+    """Damped additive ETS forecast for txn volume models."""
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    try:
+        m = ExponentialSmoothing(y, trend="add", seasonal="add",
+                                seasonal_periods=12, damped_trend=True)
+        fit = m.fit(optimized=True)
+        return fit.forecast(steps=horizon)
+    except Exception:
+        return None
+
+
+# Ensemble weights for txn volume models (P2.5)
+TXN_ENSEMBLE_WEIGHTS = {
+    "forecast_upi_vol": {"prophet": 0.35, "arima": 0.25, "ets": 0.40},
+    "forecast_cc_vol":  {"prophet": 0.50, "arima": 0.25, "ets": 0.25},
+    "forecast_dc_vol":  {"prophet": 0.50, "arima": 0.25, "ets": 0.25},
+}
+
+
+def _estimate_txn_weights(
+    y: np.ndarray, config_stem: str, horizon: int = 12,
+) -> dict[str, float]:
+    """Walk-forward CV to find best Prophet/ARIMA/ETS blend for txn volumes."""
+    initial = 36
+    step = 6
+    default = TXN_ENSEMBLE_WEIGHTS.get(config_stem, {"prophet": 0.50, "arima": 0.25, "ets": 0.25})
+
+    if len(y) < initial + horizon:
+        return default
+
+    arima_all, ets_all, actuals = [], [], []
+    for start in range(initial, len(y) - horizon + 1, step):
+        train_y = y[:start]
+        test_y = y[start:start + horizon]
+        a = _fit_arima_fc(train_y, horizon)
+        e = _fit_ets_fc(train_y, horizon)
+        if a is not None and e is not None:
+            arima_all.append(a)
+            ets_all.append(e)
+            actuals.append(test_y)
+
+    if len(actuals) < 2:
+        return default
+
+    prophet_floor = default.get("prophet", 0.35)
+    remaining = 1.0 - prophet_floor
+    best_mape = float("inf")
+    best_split = (0.5, 0.5)
+
+    for arima_s in np.arange(0.0, 1.05, 0.1):
+        ets_s = 1.0 - arima_s
+        w_a = remaining * arima_s
+        w_e = remaining * ets_s
+        mapes = []
+        for a, e, act in zip(arima_all, ets_all, actuals):
+            ens = w_a * a + w_e * e
+            m = np.mean(np.abs((act - ens / (1 - prophet_floor)) / act)) * 100
+            mapes.append(m)
+        avg = np.mean(mapes)
+        if avg < best_mape:
+            best_mape = avg
+            best_split = (round(w_a, 2), round(w_e, 2))
+
+    weights = {"prophet": prophet_floor, "arima": best_split[0], "ets": best_split[1]}
+    logger.info(f"  Txn ensemble weights: {weights} (CV MAPE: {best_mape:.2f}%)")
+    return weights
+
+
 def _run_forecast(model, config: dict, train_df: pd.DataFrame, master: pd.DataFrame) -> pd.DataFrame:
-    """Generate 12-month forecast. Returns forecast-only rows."""
+    """Generate 12-month ensemble forecast. Returns forecast-only rows.
+
+    For UPI and txn volume models (P2.5): blends Prophet + ARIMA + ETS
+    using CV-estimated weights instead of Prophet-only.
+    """
+    horizon = FORECAST_CONFIG.get("periods", 24)
+    # Txn volume models use 12-month horizon by default
+    if "vol" in config.get("output_stem", ""):
+        horizon = 12
+
     future_df = build_future_df(train_df, config, master)
     forecast = model.predict(future_df)
 
     last_hist = train_df["ds"].max()
-    fc = forecast[forecast["ds"] > last_hist][[
-        "ds", "yhat", "yhat_lower", "yhat_upper", "trend", "yearly",
-    ]].copy()
-    fc.columns = [
-        "date", "forecast", "forecast_lower", "forecast_upper",
-        "trend_component", "seasonality_component",
-    ]
+    prophet_fc = forecast[forecast["ds"] > last_hist].copy()
+    prophet_yhat = prophet_fc["yhat"].values[:horizon]
+    prophet_dates = prophet_fc["ds"].values[:horizon]
 
-    # Clip negative forecasts to zero (transaction volumes can't be negative)
-    for col in ["forecast", "forecast_lower", "forecast_upper"]:
-        fc[col] = fc[col].clip(lower=0)
+    y = train_df["y"].values
+    arima_yhat = _fit_arima_fc(y, horizon)
+    ets_yhat = _fit_ets_fc(y, horizon)
 
+    # Build ensemble
     stem = config["output_stem"]
+    weights = _estimate_txn_weights(y, stem, horizon)
+
+    forecasts = {}
+    if prophet_yhat is not None and len(prophet_yhat) == horizon:
+        forecasts["prophet"] = prophet_yhat
+    if arima_yhat is not None and len(arima_yhat) == horizon:
+        forecasts["arima"] = arima_yhat
+    if ets_yhat is not None and len(ets_yhat) == horizon:
+        forecasts["ets"] = ets_yhat
+
+    if not forecasts:
+        raise RuntimeError(f"All forecast models failed for {config['name']}")
+
+    total_w = sum(weights.get(k, 0) for k in forecasts if weights.get(k, 0) > 0)
+    ensemble = np.zeros(horizon)
+    for name, fc_arr in forecasts.items():
+        w = weights.get(name, 0) / total_w if total_w > 0 else 1.0 / len(forecasts)
+        ensemble += w * fc_arr
+        logger.info(f"  Ensemble member {name}: weight={w:.2f}, mean={np.mean(fc_arr):.1f}")
+
+    # Clip negative (volumes can't be negative)
+    ensemble = np.clip(ensemble, 0, None)
+
+    # Use Prophet's CI widths, scaled to ensemble
+    prophet_lower = prophet_fc["yhat_lower"].values[:horizon]
+    prophet_upper = prophet_fc["yhat_upper"].values[:horizon]
+    ci_width_lower = prophet_yhat - prophet_lower
+    ci_width_upper = prophet_upper - prophet_yhat
+    fc_lower = np.clip(ensemble - ci_width_lower, 0, None)
+    fc_upper = ensemble + ci_width_upper
+
+    fc = pd.DataFrame({
+        "date": prophet_dates[:horizon],
+        "forecast": ensemble,
+        "forecast_lower": fc_lower,
+        "forecast_upper": fc_upper,
+        "trend_component": prophet_fc["trend"].values[:horizon],
+        "seasonality_component": prophet_fc["yearly"].values[:horizon],
+    })
+
     fc.to_parquet(_PROCESSED / f"{stem}.parquet", index=False)
     fc.to_csv(_PROCESSED / f"{stem}.csv", index=False)
 
@@ -155,10 +281,17 @@ def _run_forecast(model, config: dict, train_df: pd.DataFrame, master: pd.DataFr
     full = forecast[["ds", "yhat", "yhat_lower", "yhat_upper", "trend"]].copy()
     full.columns = ["date", "yhat", "yhat_lower", "yhat_upper", "trend"]
     full["actual"] = train_df.set_index("ds")["y"].reindex(full["date"]).values
+    # Replace forecast portion with ensemble values
+    fc_mask = full["date"] > last_hist
+    n_fc = min(fc_mask.sum(), horizon)
+    full.loc[fc_mask, "yhat"] = np.nan
+    full.loc[full[fc_mask].index[:n_fc], "yhat"] = ensemble[:n_fc]
+    full.loc[full[fc_mask].index[:n_fc], "yhat_lower"] = fc_lower[:n_fc]
+    full.loc[full[fc_mask].index[:n_fc], "yhat_upper"] = fc_upper[:n_fc]
     full.to_parquet(_PROCESSED / f"{stem}_full.parquet", index=False)
     full.to_csv(_PROCESSED / f"{stem}_full.csv", index=False)
 
-    logger.info(f"  12-month forecast ({config['name']}):")
+    logger.info(f"  12-month ensemble forecast ({config['name']}):")
     for _, row in fc.iterrows():
         logger.info(
             f"    {row['date']:%b %Y}: {row['forecast']:.1f} "
