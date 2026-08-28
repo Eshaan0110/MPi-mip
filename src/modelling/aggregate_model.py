@@ -245,6 +245,53 @@ def _fit_arima_forecast(
         return None
 
 
+def _fit_direct_multihorizon(
+    y: np.ndarray, horizon: int, log_transform: bool = False,
+) -> np.ndarray | None:
+    """Direct multi-horizon: separate ARIMA models for short/medium/long (P2.6).
+
+    Instead of one recursive ARIMA forecasting 24 steps (where step-20 error
+    includes compounded errors from steps 1-19), trains three models:
+      - Short (1-6m):  ARIMA(1,1,1) — best for near-term
+      - Medium (7-12m): ARIMA(2,1,1) — slightly more memory for mid-range
+      - Long (13-24m):  ARIMA(1,1,0) — simpler model, less overfitting at distance
+
+    Smooth-blends at segment boundaries (2-month linear ramp) to avoid jumps.
+    """
+    segments = [(0, 6, (1, 1, 1)), (6, 12, (2, 1, 1)), (12, horizon, (1, 1, 0))]
+    fc = np.zeros(horizon)
+    blend_width = 2
+
+    for seg_start, seg_end, order in segments:
+        if seg_start >= horizon:
+            break
+        seg_end = min(seg_end, horizon)
+        try:
+            y_fit = np.log(y) if log_transform else y
+            m = ARIMA(y_fit, order=order)
+            fit = m.fit()
+            seg_fc = fit.forecast(steps=seg_end)
+            if log_transform:
+                sigma2 = fit.resid.var()
+                seg_fc = np.exp(seg_fc + sigma2 / 2)
+
+            if seg_start == 0:
+                fc[:seg_end] = seg_fc[:seg_end]
+            else:
+                blend_start = max(seg_start - blend_width, 0)
+                for h in range(blend_start, seg_end):
+                    if h < seg_start:
+                        alpha = (h - blend_start) / blend_width
+                        fc[h] = (1 - alpha) * fc[h] + alpha * seg_fc[h]
+                    else:
+                        fc[h] = seg_fc[h]
+        except Exception:
+            recursive = _fit_arima_forecast(y, horizon, log_transform)
+            return recursive
+
+    return fc
+
+
 def _fit_arimax_forecast(
     y: np.ndarray,
     exog_train: np.ndarray | None,
@@ -324,6 +371,7 @@ def _estimate_ensemble_weights(
     arima_preds_all: list[np.ndarray] = []
     arimax_preds_all: list[np.ndarray] = []
     ets_preds_all: list[np.ndarray] = []
+    direct_preds_all: list[np.ndarray] = []
     actuals_all: list[np.ndarray] = []
 
     for start in range(initial_months, len(y) - h_months + 1, step_months):
@@ -331,6 +379,7 @@ def _estimate_ensemble_weights(
         test_y = y[start:start + h_months]
         arima_fc = _fit_arima_forecast(train_y, h_months, log_transform=log_t)
         ets_fc = _fit_ets_forecast(train_y, h_months, log_transform=log_t)
+        direct_fc = _fit_direct_multihorizon(train_y, h_months, log_transform=log_t)
 
         arimax_fc = None
         if has_arimax and train_df is not None:
@@ -343,6 +392,7 @@ def _estimate_ensemble_weights(
             arima_preds_all.append(arima_fc)
             ets_preds_all.append(ets_fc)
             arimax_preds_all.append(arimax_fc if arimax_fc is not None else arima_fc)
+            direct_preds_all.append(direct_fc if direct_fc is not None else arima_fc)
             actuals_all.append(test_y)
 
     if len(actuals_all) < 2:
@@ -350,28 +400,34 @@ def _estimate_ensemble_weights(
 
     remaining = 1.0 - prophet_floor
     best_mape = float("inf")
-    best_weights = {"arima": remaining / 3, "arimax": remaining / 3, "ets": remaining / 3}
+    n_models = 4
+    best_weights = {k: remaining / n_models for k in ("arima", "arimax", "ets", "direct")}
 
-    # 3-way grid: ARIMA, ARIMAX, ETS shares (step 0.1 for speed)
-    step_size = 0.1
+    # 4-way grid with step 0.2 for speed
+    step_size = 0.2
     for arima_s in np.arange(0.0, 1.01, step_size):
         for arimax_s in np.arange(0.0, 1.01 - arima_s, step_size):
-            ets_s = 1.0 - arima_s - arimax_s
-            if ets_s < -0.01:
-                continue
-            ets_s = max(0, ets_s)
-            w_a = remaining * arima_s
-            w_ax = remaining * arimax_s
-            w_e = remaining * ets_s
-            mapes = []
-            for a, ax, e, act in zip(arima_preds_all, arimax_preds_all, ets_preds_all, actuals_all):
-                ens = w_a * a + w_ax * ax + w_e * e
-                m = np.mean(np.abs((act - ens / (1 - prophet_floor)) / act)) * 100
-                mapes.append(m)
-            avg_mape = np.mean(mapes)
-            if avg_mape < best_mape:
-                best_mape = avg_mape
-                best_weights = {"arima": round(w_a, 2), "arimax": round(w_ax, 2), "ets": round(w_e, 2)}
+            for ets_s in np.arange(0.0, 1.01 - arima_s - arimax_s, step_size):
+                direct_s = 1.0 - arima_s - arimax_s - ets_s
+                if direct_s < -0.01:
+                    continue
+                direct_s = max(0, direct_s)
+                w_a = remaining * arima_s
+                w_ax = remaining * arimax_s
+                w_e = remaining * ets_s
+                w_d = remaining * direct_s
+                mapes = []
+                for a, ax, e, d, act in zip(arima_preds_all, arimax_preds_all, ets_preds_all, direct_preds_all, actuals_all):
+                    ens = w_a * a + w_ax * ax + w_e * e + w_d * d
+                    m = np.mean(np.abs((act - ens / (1 - prophet_floor)) / act)) * 100
+                    mapes.append(m)
+                avg_mape = np.mean(mapes)
+                if avg_mape < best_mape:
+                    best_mape = avg_mape
+                    best_weights = {
+                        "arima": round(w_a, 2), "arimax": round(w_ax, 2),
+                        "ets": round(w_e, 2), "direct": round(w_d, 2),
+                    }
 
     new_weights = {"prophet": prophet_floor, **best_weights}
     logger.info(
@@ -433,6 +489,9 @@ def _build_conformal_intervals(
         ets_fc = _fit_ets_forecast(train_y, test_len, log_transform=log_t)
         if ets_fc is not None:
             forecasts["ets"] = ets_fc
+        direct_fc = _fit_direct_multihorizon(train_y, test_len, log_transform=log_t)
+        if direct_fc is not None:
+            forecasts["direct"] = direct_fc
 
         if not forecasts:
             continue
@@ -484,8 +543,8 @@ def _build_conformal_intervals(
 # Per-series weights reflect that DC's ETS adds no value (ARIMA dominates),
 # while CC benefits from ETS diversification.
 ENSEMBLE_WEIGHTS = {
-    "cc": {"prophet": 0.30, "arima": 0.25, "arimax": 0.20, "ets": 0.25},
-    "dc": {"prophet": 0.30, "arima": 0.30, "arimax": 0.20, "ets": 0.20},
+    "cc": {"prophet": 0.25, "arima": 0.20, "arimax": 0.15, "ets": 0.20, "direct": 0.20},
+    "dc": {"prophet": 0.25, "arima": 0.25, "arimax": 0.15, "ets": 0.15, "direct": 0.20},
 }
 
 
@@ -530,6 +589,9 @@ def run_forecast(
     # --- ETS forecast ---
     ets_yhat = _fit_ets_forecast(y, horizon, log_transform=log_t)
 
+    # --- Direct multi-horizon forecast (P2.6) ---
+    direct_yhat = _fit_direct_multihorizon(y, horizon, log_transform=log_t)
+
     # --- Ensemble ---
     forecasts = {}
     if prophet_yhat is not None and len(prophet_yhat) == horizon:
@@ -540,6 +602,8 @@ def run_forecast(
         forecasts["arimax"] = arimax_yhat
     if ets_yhat is not None and len(ets_yhat) == horizon:
         forecasts["ets"] = ets_yhat
+    if direct_yhat is not None and len(direct_yhat) == horizon:
+        forecasts["direct"] = direct_yhat
 
     if not forecasts:
         raise RuntimeError("All forecast models failed")
