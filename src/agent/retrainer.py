@@ -207,23 +207,30 @@ def _cross_validate_ensemble(
         cv_test = train_df.iloc[start : start + horizon].copy()
 
         # Prophet
+        prophet_kwargs = config.get("prophet_kwargs", {})
         m = Prophet(
-            changepoint_prior_scale=config.get("changepoint_prior_scale", 0.05),
-            seasonality_prior_scale=config.get("seasonality_prior_scale", 10),
-            yearly_seasonality=True,
+            changepoint_prior_scale=prophet_kwargs.get("changepoint_prior_scale", 0.05),
+            seasonality_prior_scale=prophet_kwargs.get("seasonality_prior_scale", 10),
+            yearly_seasonality=prophet_kwargs.get("yearly_seasonality", True),
         )
+        reg_cols_used = []
         for reg in config.get("regressors", []):
-            if reg["name"] in cv_train.columns:
-                m.add_regressor(reg["name"], prior_scale=reg.get("prior_scale", 10))
+            col = reg.col if hasattr(reg, "col") else reg.get("col", reg.get("name", ""))
+            lag = reg.lag if hasattr(reg, "lag") else reg.get("lag", 0)
+            final_col = f"{col}_lag{lag}" if lag > 0 else col
+            if final_col in cv_train.columns:
+                m.add_regressor(final_col, prior_scale=5)
+                reg_cols_used.append(final_col)
         for col in extra_regressor_cols:
             if col in cv_train.columns:
                 m.add_regressor(col, prior_scale=5)
+                reg_cols_used.append(col)
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             m.fit(cv_train)
 
-        future = cv_test[["ds"] + [r["name"] for r in config.get("regressors", []) if r["name"] in cv_test.columns] + [c for c in extra_regressor_cols if c in cv_test.columns]]
+        future = cv_test[["ds"] + [c for c in reg_cols_used if c in cv_test.columns] + [c for c in extra_regressor_cols if c in cv_test.columns and c not in reg_cols_used]]
         prophet_pred = m.predict(future)["yhat"].values
 
         # ARIMA
