@@ -535,13 +535,6 @@ def _build_conformal_intervals(
     return lower_pcts, upper_pcts
 
 
-# Ensemble weights optimized via CV grid search (Round 4C audit).
-# CC optimal: ARIMA 60% / ETS 40% in 2-way; with Prophet floor at 35%
-#   -> Prophet 0.35, ARIMA 0.39, ETS 0.26
-# DC optimal: ARIMA 100% / ETS 0% in 2-way; with Prophet floor
-#   -> Prophet 0.35, ARIMA 0.65, ETS 0.00
-# Per-series weights reflect that DC's ETS adds no value (ARIMA dominates),
-# while CC benefits from ETS diversification.
 ENSEMBLE_WEIGHTS = {
     "cc": {"prophet": 0.25, "arima": 0.20, "arimax": 0.15, "ets": 0.20, "direct": 0.20},
     "dc": {"prophet": 0.25, "arima": 0.25, "arimax": 0.15, "ets": 0.15, "direct": 0.20},
