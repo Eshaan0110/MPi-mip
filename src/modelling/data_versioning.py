@@ -39,6 +39,10 @@ def snapshot_processed(label: str | None = None) -> Path:
     dest = _VINTAGES / label
     dest.mkdir(parents=True, exist_ok=True)
 
+    if not _PROCESSED.exists():
+        logger.warning(f"Processed directory not found: {_PROCESSED}")
+        return dest
+
     count = 0
     for f in sorted(_PROCESSED.iterdir()):
         if f.is_file() and f.suffix in (".parquet", ".csv", ".json"):
