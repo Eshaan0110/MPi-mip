@@ -93,7 +93,11 @@ def _walk_forward_cv(
     step: int = 6,
     horizon: int = 12,
 ) -> dict[str, float]:
-    """Run walk-forward CV with ARIMA+ETS ensemble, return avg metrics."""
+    """Run walk-forward CV with ARIMA+ETS ensemble, return avg metrics.
+
+    When regressors are provided, adds ARIMAX as a third ensemble member
+    so the full arm actually tests regressor value.
+    """
     from statsmodels.tsa.arima.model import ARIMA
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
@@ -120,7 +124,21 @@ def _walk_forward_cv(
         except Exception:
             ets_fc = np.full(horizon, np.mean(train_y[-12:]))
 
-        ensemble = 0.5 * arima_fc + 0.5 * ets_fc
+        # ARIMAX (only in the full arm, when regressors are provided)
+        arimax_fc = None
+        if regressors:
+            try:
+                exog_train = np.column_stack([v[:start] for v in regressors.values()])
+                exog_test = np.column_stack([v[start:start+horizon] for v in regressors.values()])
+                arimax_fit = ARIMA(train_y, exog=exog_train, order=(1, 1, 1)).fit()
+                arimax_fc = arimax_fit.forecast(steps=horizon, exog=exog_test)
+            except Exception:
+                arimax_fc = None
+
+        if arimax_fc is not None:
+            ensemble = (1/3) * arima_fc + (1/3) * ets_fc + (1/3) * arimax_fc
+        else:
+            ensemble = 0.5 * arima_fc + 0.5 * ets_fc
         ape = np.abs((test_y - ensemble) / test_y)
         mapes.append(np.mean(ape) * 100)
         maes.append(np.mean(np.abs(test_y - ensemble)))
@@ -155,9 +173,19 @@ def run_ablation(
     train_df = build_training_df(master, config)
     y = train_df["y"].values
 
-    # Full model: with all regressors (just ARIMA+ETS on the residual-free series)
-    logger.info(f"Ablation [{model_name}]: running full arm (with signal regressors)")
-    full_metrics = _walk_forward_cv(y, None)
+    # Build regressor arrays for the full arm
+    reg_arrays = {}
+    for col_name in signal_regressors:
+        final_col = col_name
+        for c in train_df.columns:
+            if c == col_name or c.startswith(f"{col_name}_lag"):
+                final_col = c
+                break
+        if final_col in train_df.columns:
+            reg_arrays[final_col] = train_df[final_col].values
+
+    logger.info(f"Ablation [{model_name}]: running full arm (with {len(reg_arrays)} regressors)")
+    full_metrics = _walk_forward_cv(y, reg_arrays if reg_arrays else None)
 
     logger.info(f"Ablation [{model_name}]: running ablated arm (without signal regressors)")
     ablated_metrics = _walk_forward_cv(y, None)
