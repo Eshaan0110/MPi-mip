@@ -220,19 +220,15 @@ def evaluate_candidates(
             if target not in master.columns:
                 continue
 
-            # Apply lag for Granger test
             test_df = master[["date", target]].copy()
-            if candidate.lag > 0:
-                test_df[candidate.col] = master[candidate.col].shift(candidate.lag)
-            else:
-                test_df[candidate.col] = master[candidate.col]
+            test_df[candidate.col] = master[candidate.col]
 
             granger = run_granger(
                 test_df,
                 x_col=candidate.col,
                 y_col=target,
                 hypothesis=candidate.hypothesis,
-                maxlag=6,
+                maxlag=max(candidate.lag, 6),
                 alpha=alpha,
                 interpretation_confirmed=candidate.interpretation_confirmed,
                 interpretation_not_confirmed=candidate.interpretation_not_confirmed,
