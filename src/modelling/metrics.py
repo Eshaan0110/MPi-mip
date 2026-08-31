@@ -95,13 +95,6 @@ def pinball_loss(
     )
     loss_hi = np.where(
         actual > upper,
-        (1 - tau_hi) * (actual - upper),
-        tau_hi * (upper - actual),
-    )
-    # Note: the second branch for tau_hi simplifies since tau_hi > 0.5
-    # but the formula is symmetric for clarity
-    loss_hi = np.where(
-        actual > upper,
         tau_hi * (actual - upper),
         (1 - tau_hi) * (upper - actual),
     )
