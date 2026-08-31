@@ -339,15 +339,71 @@ def _fit_ets_forecast(
         return None
 
 
+def _collect_prophet_cv_preds(
+    train_df: pd.DataFrame, config: dict,
+    initial_months: int, step_months: int, h_months: int,
+) -> list[tuple[np.ndarray, np.ndarray]] | None:
+    """Run Prophet CV once and return (predictions, actuals) per fold.
+
+    Returns None if Prophet CV fails or has too few folds.
+    """
+    from prophet import Prophet
+    from src.modelling.model_config import STRUCTURAL_EVENTS, RegressorSpec
+
+    y = train_df["y"].values
+    folds = []
+
+    for start in range(initial_months, len(y) - h_months + 1, step_months):
+        cv_train = train_df.iloc[:start].copy()
+        cv_test = train_df.iloc[start:start + h_months].copy()
+
+        try:
+            prophet_kwargs = dict(config.get("prophet_kwargs", {}))
+            m = Prophet(**prophet_kwargs)
+
+            regressors: list = config.get("regressors", [])
+            for spec in regressors:
+                col = spec.col if hasattr(spec, "col") else spec
+                lag = spec.lag if hasattr(spec, "lag") else 0
+                final_col = f"{col}_lag{lag}" if lag > 0 else col
+                if final_col in cv_train.columns:
+                    mode = spec.mode if hasattr(spec, "mode") else "additive"
+                    m.add_regressor(final_col, mode=mode)
+
+            event_cols = [c for c in cv_train.columns if c.startswith("event_")]
+            for col in event_cols:
+                m.add_regressor(col, standardize=False, mode="additive")
+
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                m.fit(cv_train)
+
+            future_cols = ["ds"] + [c for c in cv_test.columns if c != "y"]
+            future = cv_test[future_cols].copy()
+            pred = m.predict(future)["yhat"].values[:h_months]
+            actual = cv_test["y"].values[:h_months]
+
+            if len(pred) == h_months:
+                folds.append((pred, actual))
+        except Exception as e:
+            logger.debug(f"  Prophet CV fold at {start} failed: {e}")
+            continue
+
+    if len(folds) < 2:
+        return None
+    return folds
+
+
 def _estimate_ensemble_weights(
     y: np.ndarray, config: dict, horizon: int,
     train_df: pd.DataFrame | None = None,
 ) -> dict[str, float]:
-    """Re-estimate ensemble weights from walk-forward CV on ARIMA+ARIMAX+ETS.
+    """Re-estimate ensemble weights from walk-forward CV on all 5 members.
 
-    Uses grid search over weight combinations, minimising mean MAPE across
-    all CV folds. Prophet is excluded from the CV loop for speed — its weight
-    is floored at the hardcoded value (it still contributes to the forecast).
+    Runs Prophet CV once upfront, then collects ARIMA/ARIMAX/ETS/direct
+    predictions per fold. Grid search optimises over all 5 weights jointly,
+    evaluating the actual full ensemble (including Prophet) against actuals.
 
     Returns updated weight dict; falls back to ENSEMBLE_WEIGHTS on failure.
     """
@@ -357,23 +413,37 @@ def _estimate_ensemble_weights(
 
     model_key = "cc" if "credit" in config.get("name", "") else "dc"
     default_weights = ENSEMBLE_WEIGHTS[model_key].copy()
-    prophet_floor = default_weights.get("prophet", 0.30)
 
     log_t = config.get("log_transform", False)
 
     if h_months < 1:
         return default_weights
 
+    # Check cache — skip grid search if data hasn't changed
+    dhash = _data_hash(y)
+    cached = _load_cached_weights(model_key, dhash)
+    if cached is not None:
+        return cached
+
+    # Pre-compute Prophet CV predictions (one-time cost)
+    prophet_folds = None
+    if train_df is not None:
+        prophet_folds = _collect_prophet_cv_preds(
+            train_df, config, initial_months, step_months, h_months,
+        )
+
     # Get regressor columns for ARIMAX
     reg_cols = _get_regressor_cols(config, train_df) if train_df is not None else []
     has_arimax = len(reg_cols) > 0
 
+    prophet_preds_all: list[np.ndarray] = []
     arima_preds_all: list[np.ndarray] = []
     arimax_preds_all: list[np.ndarray] = []
     ets_preds_all: list[np.ndarray] = []
     direct_preds_all: list[np.ndarray] = []
     actuals_all: list[np.ndarray] = []
 
+    fold_idx = 0
     for start in range(initial_months, len(y) - h_months + 1, step_months):
         train_y = y[:start]
         test_y = y[start:start + h_months]
@@ -388,53 +458,61 @@ def _estimate_ensemble_weights(
             if len(exog_future) >= h_months:
                 arimax_fc = _fit_arimax_forecast(train_y, exog_train, exog_future, h_months, log_transform=log_t)
 
+        # Match with Prophet fold predictions
+        prophet_fc = None
+        if prophet_folds and fold_idx < len(prophet_folds):
+            prophet_fc = prophet_folds[fold_idx][0]
+            fold_idx += 1
+
         if arima_fc is not None and ets_fc is not None:
             arima_preds_all.append(arima_fc)
             ets_preds_all.append(ets_fc)
             arimax_preds_all.append(arimax_fc if arimax_fc is not None else arima_fc)
             direct_preds_all.append(direct_fc if direct_fc is not None else arima_fc)
+            prophet_preds_all.append(prophet_fc if prophet_fc is not None else arima_fc)
             actuals_all.append(test_y)
 
     if len(actuals_all) < 2:
         return default_weights
 
-    remaining = 1.0 - prophet_floor
+    has_prophet_preds = prophet_folds is not None
     best_mape = float("inf")
-    n_models = 4
-    best_weights = {k: remaining / n_models for k in ("arima", "arimax", "ets", "direct")}
+    n_models = 5
+    best_weights = {k: 1.0 / n_models for k in ("prophet", "arima", "arimax", "ets", "direct")}
 
-    # 4-way grid with step 0.2 for speed
+    # 5-way grid with step 0.2
     step_size = 0.2
-    for arima_s in np.arange(0.0, 1.01, step_size):
-        for arimax_s in np.arange(0.0, 1.01 - arima_s, step_size):
-            for ets_s in np.arange(0.0, 1.01 - arima_s - arimax_s, step_size):
-                direct_s = 1.0 - arima_s - arimax_s - ets_s
-                if direct_s < -0.01:
-                    continue
-                direct_s = max(0, direct_s)
-                w_a = remaining * arima_s
-                w_ax = remaining * arimax_s
-                w_e = remaining * ets_s
-                w_d = remaining * direct_s
-                mapes = []
-                for a, ax, e, d, act in zip(arima_preds_all, arimax_preds_all, ets_preds_all, direct_preds_all, actuals_all):
-                    ens = w_a * a + w_ax * ax + w_e * e + w_d * d
-                    m = np.mean(np.abs((act - ens / (1 - prophet_floor)) / act)) * 100
-                    mapes.append(m)
-                avg_mape = np.mean(mapes)
-                if avg_mape < best_mape:
-                    best_mape = avg_mape
-                    best_weights = {
-                        "arima": round(w_a, 2), "arimax": round(w_ax, 2),
-                        "ets": round(w_e, 2), "direct": round(w_d, 2),
-                    }
+    for p_w in np.arange(0.0, 1.01, step_size):
+        for a_w in np.arange(0.0, 1.01 - p_w, step_size):
+            for ax_w in np.arange(0.0, 1.01 - p_w - a_w, step_size):
+                for e_w in np.arange(0.0, 1.01 - p_w - a_w - ax_w, step_size):
+                    d_w = 1.0 - p_w - a_w - ax_w - e_w
+                    if d_w < -0.01:
+                        continue
+                    d_w = max(0, d_w)
+                    mapes = []
+                    for p, a, ax, e, d, act in zip(
+                        prophet_preds_all, arima_preds_all, arimax_preds_all,
+                        ets_preds_all, direct_preds_all, actuals_all,
+                    ):
+                        ens = p_w * p + a_w * a + ax_w * ax + e_w * e + d_w * d
+                        m = np.mean(np.abs((act - ens) / act)) * 100
+                        mapes.append(m)
+                    avg_mape = np.mean(mapes)
+                    if avg_mape < best_mape:
+                        best_mape = avg_mape
+                        best_weights = {
+                            "prophet": round(p_w, 2), "arima": round(a_w, 2),
+                            "arimax": round(ax_w, 2), "ets": round(e_w, 2),
+                            "direct": round(d_w, 2),
+                        }
 
-    new_weights = {"prophet": prophet_floor, **best_weights}
     logger.info(
-        f"  Ensemble weights re-estimated: {new_weights} "
+        f"  Ensemble weights re-estimated: {best_weights} "
         f"(CV MAPE: {best_mape:.2f}%, prev: {default_weights})"
     )
-    return new_weights
+    _save_cached_weights(model_key, dhash, best_weights)
+    return best_weights
 
 
 def _build_conformal_intervals(
@@ -539,6 +617,35 @@ ENSEMBLE_WEIGHTS = {
     "cc": {"prophet": 0.25, "arima": 0.20, "arimax": 0.15, "ets": 0.20, "direct": 0.20},
     "dc": {"prophet": 0.25, "arima": 0.25, "arimax": 0.15, "ets": 0.15, "direct": 0.20},
 }
+
+_WEIGHT_CACHE_DIR = _PROCESSED / "weight_cache"
+
+
+def _data_hash(y: np.ndarray) -> str:
+    """Quick hash of training data to detect changes."""
+    import hashlib
+    return hashlib.md5(y.tobytes()).hexdigest()[:12]
+
+
+def _load_cached_weights(model_key: str, data_hash: str) -> dict | None:
+    """Load cached weights if data hasn't changed."""
+    import json
+    cache_file = _WEIGHT_CACHE_DIR / f"{model_key}_{data_hash}.json"
+    if cache_file.exists():
+        with open(cache_file) as f:
+            cached = json.load(f)
+        logger.info(f"  Ensemble weights loaded from cache ({model_key}, hash={data_hash})")
+        return cached
+    return None
+
+
+def _save_cached_weights(model_key: str, data_hash: str, weights: dict) -> None:
+    """Cache weights keyed by data hash."""
+    import json
+    _WEIGHT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = _WEIGHT_CACHE_DIR / f"{model_key}_{data_hash}.json"
+    with open(cache_file, "w") as f:
+        json.dump(weights, f)
 
 
 def run_forecast(
