@@ -66,14 +66,30 @@ def save_forecast_vintage(
     return dest
 
 
+_TARGET_TO_SOURCE = {
+    "credit_cards_outstanding_lakh": "rbi_psi_cards",
+    "debit_cards_outstanding_lakh": "rbi_psi_cards",
+    "cc_txn_vol_lakh": "rbi_psi_cards",
+    "dc_txn_vol_lakh": "rbi_psi_cards",
+    "upi_volume_mn": "npci_upi",
+    "upi_value_cr": "npci_upi",
+}
+
+
 def _load_first_release_actuals(
     forecast_dates: list[pd.Timestamp],
     target_col: str,
+    source_file: str | None = None,
 ) -> pd.Series | None:
     """Find the earliest vintage that contains each forecast date's actual value.
 
     For each forecast date, we want the first-release value — the number
     that was first published, before any RBI revisions.
+
+    Args:
+        forecast_dates: dates to look up
+        target_col: column name for actuals
+        source_file: parquet stem in vintage snapshot (auto-detected from target_col)
     """
     vintages = sorted(
         [d.name for d in _VINTAGES.iterdir() if d.is_dir()]
@@ -82,17 +98,20 @@ def _load_first_release_actuals(
     if not vintages:
         return None
 
+    if source_file is None:
+        source_file = _TARGET_TO_SOURCE.get(target_col, "rbi_psi_cards")
+
     first_release = {}
 
     for fc_date in forecast_dates:
         if fc_date in first_release:
             continue
         for vintage_label in vintages:
-            psi_path = _VINTAGES / vintage_label / "rbi_psi_cards.parquet"
-            if not psi_path.exists():
+            src_path = _VINTAGES / vintage_label / f"{source_file}.parquet"
+            if not src_path.exists():
                 continue
             try:
-                df = pd.read_parquet(psi_path)
+                df = pd.read_parquet(src_path)
                 df["date"] = pd.to_datetime(df["date"]).dt.to_period("M").dt.to_timestamp()
                 row = df[df["date"] == fc_date]
                 if not row.empty and target_col in row.columns:
