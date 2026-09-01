@@ -94,26 +94,35 @@ export default function AgentPage() {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [articles, setArticles] = useState<AgentArticle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"findings" | "articles" | "retrains" | "runs">("findings");
 
   useEffect(() => {
     async function load() {
-      const [f, r, a, ar] = await Promise.all([
-        supabase.from("agent_findings").select("*").order("discovered_at", { ascending: false }).limit(100),
-        supabase.from("agent_retrains").select("*").order("evaluated_at", { ascending: false }).limit(50),
-        supabase.from("agent_runs").select("*").order("started_at", { ascending: false }).limit(20),
-        supabase.from("agent_articles").select("*").order("discovered_at", { ascending: false }).limit(100),
-      ]);
-      if (f.data) setFindings(f.data);
-      if (r.data) setRetrains(r.data);
-      if (a.data) setRuns(a.data);
-      if (ar.data) setArticles(ar.data);
-      setLoading(false);
+      try {
+        const [f, r, a, ar] = await Promise.all([
+          supabase.from("agent_findings").select("*").order("discovered_at", { ascending: false }).limit(100),
+          supabase.from("agent_retrains").select("*").order("evaluated_at", { ascending: false }).limit(50),
+          supabase.from("agent_runs").select("*").order("started_at", { ascending: false }).limit(20),
+          supabase.from("agent_articles").select("*").order("discovered_at", { ascending: false }).limit(100),
+        ]);
+        const errors = [f.error, r.error, a.error, ar.error].filter(Boolean);
+        if (errors.length) setError(errors.map((e) => e?.message).join("; "));
+        if (f.data) setFindings(f.data);
+        if (r.data) setRetrains(r.data);
+        if (a.data) setRuns(a.data);
+        if (ar.data) setArticles(ar.data);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load agent data");
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-400 dark:text-slate-500">Loading agent data...</div></div>;
+  if (error) return <div className="flex items-center justify-center h-64"><div className="text-red-500">Error: {error}</div></div>;
 
   const signalCounts: Record<string, number> = {};
   for (const f of findings) {

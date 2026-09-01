@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { ModelMetadata } from "@/lib/types";
+import { ALLOWED_CC_BANKS, ALLOWED_DC_BANKS } from "@/lib/constants";
 
 function accuracyFromMape(mape: number | null): number | null {
   if (mape == null) return null;
@@ -27,20 +28,6 @@ function median(arr: number[]): number {
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
-
-const ALLOWED_CC = new Set([
-  "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
-  "Kotak Mahindra Bank", "RBL Bank", "IDFC First Bank",
-  "IndusInd Bank", "Bank of Baroda", "Yes Bank", "Canara Bank",
-  "HSBC",
-]);
-const ALLOWED_DC = new Set([
-  "State Bank of India", "Bank of Baroda", "Canara Bank", "HDFC Bank",
-  "Union Bank of India", "Punjab National Bank", "Axis Bank",
-  "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
-  "ICICI Bank", "Paytm Payments Bank", "Central Bank of India",
-  "India Post Payments Bank", "Indian Overseas Bank", "UCO Bank",
-]);
 
 export default function ModelPerformancePage() {
   const [models, setModels] = useState<ModelMetadata[]>([]);
@@ -73,14 +60,14 @@ export default function ModelPerformancePage() {
   const filtered = filter === "all" ? models : models.filter((m) => m.card_type === filter);
   const bankModels = filtered.filter((m) => {
     if (!m.bank_name) return false;
-    if (m.card_type === "CC") return ALLOWED_CC.has(m.bank_name);
-    if (m.card_type === "DC") return ALLOWED_DC.has(m.bank_name);
+    if (m.card_type === "CC") return ALLOWED_CC_BANKS.has(m.bank_name);
+    if (m.card_type === "DC") return ALLOWED_DC_BANKS.has(m.bank_name);
     return false;
   });
   const aggModels = filtered.filter((m) => !m.bank_name && m.metric);
 
-  const ccBankMapes = models.filter((m) => m.bank_name && m.card_type === "CC" && m.cv_mape != null && ALLOWED_CC.has(m.bank_name)).map((m) => m.cv_mape!);
-  const dcBankMapes = models.filter((m) => m.bank_name && m.card_type === "DC" && m.cv_mape != null && ALLOWED_DC.has(m.bank_name)).map((m) => m.cv_mape!);
+  const ccBankMapes = models.filter((m) => m.bank_name && m.card_type === "CC" && m.cv_mape != null && ALLOWED_CC_BANKS.has(m.bank_name)).map((m) => m.cv_mape!);
+  const dcBankMapes = models.filter((m) => m.bank_name && m.card_type === "DC" && m.cv_mape != null && ALLOWED_DC_BANKS.has(m.bank_name)).map((m) => m.cv_mape!);
   const ccMedianAcc = ccBankMapes.length > 0 ? (100 - median(ccBankMapes)).toFixed(1) : null;
   const dcMedianAcc = dcBankMapes.length > 0 ? (100 - median(dcBankMapes)).toFixed(1) : null;
   const allMapes = [...ccBankMapes, ...dcBankMapes];

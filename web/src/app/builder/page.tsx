@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { ForecastChart, COLORS } from "@/components/ForecastChart";
-import type { AggregateForecast, BankForecast } from "@/lib/types";
+import { ForecastChart, COLORS, type MultiLinePoint } from "@/components/ForecastChart";
+import type { AggregateForecast, BankForecast, Scenario } from "@/lib/types";
+import { ALLOWED_CC_BANKS, ALLOWED_DC_BANKS, displayBank } from "@/lib/constants";
 
 function toM(v: number): number { return v / 10; }
 function toMBank(v: number): number { return v / 1_000_000; }
@@ -19,25 +20,6 @@ function fmtMonthInput(m: string): string {
   return m.length >= 7 ? m.substring(0, 7) : m;
 }
 
-const ALLOWED_CC_BANKS = new Set([
-  "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
-  "Kotak Mahindra Bank", "RBL Bank", "IDFC First Bank",
-  "IndusInd Bank", "Bank of Baroda", "Yes Bank", "Canara Bank",
-  "HSBC", "_RESIDUAL",
-]);
-const ALLOWED_DC_BANKS = new Set([
-  "State Bank of India", "Bank of Baroda", "Canara Bank", "HDFC Bank",
-  "Union Bank of India", "Punjab National Bank", "Axis Bank",
-  "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
-  "ICICI Bank", "Paytm Payments Bank", "Central Bank of India",
-  "India Post Payments Bank", "Indian Overseas Bank", "UCO Bank",
-  "_RESIDUAL",
-]);
-
-function displayBank(name: string): string {
-  return name === "_RESIDUAL" ? "All Other Banks (Residual)" : name;
-}
-
 type ViewLevel = "aggregate" | "bank";
 
 export default function BuilderPage() {
@@ -45,6 +27,8 @@ export default function BuilderPage() {
   const [bankData, setBankData] = useState<BankForecast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
 
   const [cardType, setCardType] = useState<"CC" | "DC">("CC");
   const [viewLevel, setViewLevel] = useState<ViewLevel>("aggregate");
@@ -54,14 +38,16 @@ export default function BuilderPage() {
 
   useEffect(() => {
     async function load() {
-      const [aggRes, bankRes] = await Promise.all([
+      const [aggRes, bankRes, scRes] = await Promise.all([
         supabase.from("forecasts_aggregate").select("*").order("forecast_month", { ascending: true }),
         supabase.from("forecasts_bank").select("*").order("forecast_month", { ascending: true }),
+        supabase.from("scenarios").select("*").order("forecast_month", { ascending: true }),
       ]);
       if (aggRes.error) { setError(aggRes.error.message); setLoading(false); return; }
       if (bankRes.error) { setError(bankRes.error.message); setLoading(false); return; }
       setAggData(aggRes.data || []);
       setBankData(bankRes.data || []);
+      if (scRes.data) setScenarios(scRes.data);
 
       const aggMonths = [...new Set((aggRes.data || []).map((d) => d.forecast_month))].sort();
       if (aggMonths.length > 0) {
@@ -109,7 +95,7 @@ export default function BuilderPage() {
     )].sort();
 
     const multiData = months.map((m) => {
-      const row: any = { month: m };
+      const row: MultiLinePoint = { month: m };
       for (const bank of selectedBanks) {
         const rec = bankData.find((f) => f.bank_name === bank && f.card_type === cardType && f.forecast_month === m);
         row[bank] = rec ? rec.yhat * RAW_TO_LAKH : undefined;
@@ -337,6 +323,66 @@ export default function BuilderPage() {
                     <td className="py-2.5 text-right text-gray-500 dark:text-slate-400">{d.upper ? fmtM(d.upper) : "—"}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Ensemble Scenario Analysis */}
+      {scenarios.length > 0 && cardType === "CC" && viewLevel === "aggregate" && (
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700/50 p-6 mt-6">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200">Repo Rate Scenario Analysis</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Ensemble forecast under different RBI rate scenarios — all 5 members respond</p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            {[...new Map(scenarios.map(s => [s.scenario, s])).values()].map((s) => (
+              <div key={s.scenario} className="bg-gray-50 dark:bg-slate-700/30 rounded-lg p-3 text-center">
+                <p className="text-xs text-gray-400 dark:text-slate-500">{s.label || s.scenario}</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white mt-0.5">{s.repo_rate?.toFixed(2)}%</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white dark:bg-slate-800">
+                <tr className="border-b border-gray-200 dark:border-slate-700 text-left text-gray-500 dark:text-slate-400">
+                  <th className="pb-3 pr-4 font-medium">Month</th>
+                  {[...new Set(scenarios.map(s => s.scenario))].map((sc) => (
+                    <th key={sc} className="pb-3 text-right font-medium">{sc.replace(/_/g, " ")}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const months = [...new Set(scenarios.map(s => s.forecast_month))].sort();
+                  const scNames = [...new Set(scenarios.map(s => s.scenario))];
+                  const baseMap = new Map(scenarios.filter(s => s.scenario === "base").map(s => [s.forecast_month, s.yhat]));
+                  return months.filter(m => m >= fromMonth && m <= toMonth).map((month) => (
+                    <tr key={month} className="border-b border-gray-200 dark:border-slate-700/50 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-700/30">
+                      <td className="py-2.5 pr-4 text-gray-700 dark:text-slate-300">{fmtMonth(month)}</td>
+                      {scNames.map((sc) => {
+                        const row = scenarios.find(s => s.scenario === sc && s.forecast_month === month);
+                        const val = row ? toM(row.yhat) : null;
+                        const baseVal = baseMap.get(month);
+                        const delta = val && baseVal ? ((row!.yhat - baseVal) / baseVal * 100) : null;
+                        return (
+                          <td key={sc} className="py-2.5 text-right">
+                            <span className="font-medium text-gray-900 dark:text-white">{val ? fmtM(val) : "—"}</span>
+                            {delta !== null && sc !== "base" && (
+                              <span className={`ml-1.5 text-xs ${delta >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                {delta >= 0 ? "+" : ""}{delta.toFixed(1)}%
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
           </div>

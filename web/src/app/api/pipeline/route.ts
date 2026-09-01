@@ -4,8 +4,19 @@ export const dynamic = "force-dynamic";
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "";
 const GITHUB_PAT = process.env.GITHUB_PAT || "";
+const API_SECRET = process.env.PIPELINE_API_SECRET || "";
+
+function isAuthorized(req: NextRequest): boolean {
+  if (!API_SECRET) return true;
+  const token = req.headers.get("x-api-secret") || req.nextUrl.searchParams.get("secret");
+  return token === API_SECRET;
+}
 
 export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   if (!GITHUB_REPO || !GITHUB_PAT) {
     return NextResponse.json(
       { error: "GITHUB_REPO and GITHUB_PAT environment variables are required" },
@@ -67,7 +78,17 @@ export async function GET() {
   }
 
   const data = await res.json();
-  const runs = (data.workflow_runs || []).map((r: any) => ({
+  interface GHWorkflowRun {
+    id: number;
+    status: string;
+    conclusion: string | null;
+    created_at: string;
+    updated_at: string;
+    html_url: string;
+    event: string;
+    run_number: number;
+  }
+  const runs = (data.workflow_runs || []).map((r: GHWorkflowRun) => ({
     id: r.id,
     status: r.status,
     conclusion: r.conclusion,

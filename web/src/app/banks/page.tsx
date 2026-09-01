@@ -3,33 +3,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { KpiCard } from "@/components/KpiCard";
-import { ForecastChart, COLORS } from "@/components/ForecastChart";
+import { ForecastChart, COLORS, type MultiLinePoint } from "@/components/ForecastChart";
 import { MonthSelector } from "@/components/MonthSelector";
 import type { BankForecast, ProcessedBankSeries } from "@/lib/types";
+import { ALLOWED_CC_BANKS, ALLOWED_DC_BANKS, displayBank } from "@/lib/constants";
 
 function toM(v: number): number { return v / 1_000_000; }
 function fmtM(n: number, decimals = 1): string { return n.toFixed(decimals) + " M"; }
-
-const ALLOWED_CC_BANKS = new Set([
-  "HDFC Bank", "State Bank of India", "ICICI Bank", "Axis Bank",
-  "Kotak Mahindra Bank", "RBL Bank", "IDFC First Bank",
-  "IndusInd Bank", "Bank of Baroda", "Yes Bank", "Canara Bank",
-  "HSBC", "_RESIDUAL",
-]);
-
-const ALLOWED_DC_BANKS = new Set([
-  "State Bank of India", "Bank of Baroda", "Canara Bank", "HDFC Bank",
-  "Union Bank of India", "Punjab National Bank", "Axis Bank",
-  "Bank of India", "Kotak Mahindra Bank", "Indian Bank",
-  "ICICI Bank", "Paytm Payments Bank", "Central Bank of India",
-  "India Post Payments Bank", "Indian Overseas Bank", "UCO Bank",
-  "_RESIDUAL",
-]);
-
-function displayBank(name: string): string {
-  if (name === "_RESIDUAL") return "All Other Banks (Residual)";
-  return name;
-}
 
 function formatDate(m: string): string {
   const d = new Date(m.length === 7 ? m + "-01" : m);
@@ -133,7 +113,7 @@ export default function BankExplorerPage() {
   )].sort();
 
   const multiData = allMonthsForType.map((m) => {
-    const row: any = { month: m };
+    const row: MultiLinePoint = { month: m };
     for (const bank of selectedBanks) {
       const rec = forecasts.find((f) => f.bank_name === bank && f.card_type === cardType && f.forecast_month === m);
       row[bank] = rec ? rec.yhat * RAW_TO_LAKH : undefined;

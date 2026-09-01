@@ -68,12 +68,26 @@ function formatMonthLong(m: string): string {
   return d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 }
 
-function CustomTooltip({ active, payload, label, isDark }: any) {
+interface TooltipPayloadEntry {
+  dataKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  value: any;
+  name: string;
+  color: string;
+  stroke?: string;
+}
+
+function CustomTooltip({ active, payload, label, isDark }: {
+  active?: boolean;
+  payload?: TooltipPayloadEntry[];
+  label?: string;
+  isDark: boolean;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className={`rounded-lg shadow-xl px-4 py-3 text-sm min-w-[180px] ${isDark ? "bg-slate-800 border border-slate-600" : "bg-white border border-gray-200"}`}>
-      <p className={`font-semibold mb-2 text-[13px] ${isDark ? "text-slate-200" : "text-gray-800"}`}>{formatMonthLong(label)}</p>
-      {payload.map((p: any, i: number) => {
+      <p className={`font-semibold mb-2 text-[13px] ${isDark ? "text-slate-200" : "text-gray-800"}`}>{formatMonthLong(label ?? "")}</p>
+      {payload.map((p: TooltipPayloadEntry, i: number) => {
         if (p.dataKey === "ciRange") {
           const [low, high] = p.value || [];
           return (
@@ -132,14 +146,14 @@ export function ForecastChart({ data, title, unit, highlightMonth, multiLines, m
     setRefAreaRight("");
   }, []);
 
-  const handleMouseDown = useCallback((e: any) => {
+  const handleMouseDown = useCallback((e: { activeLabel?: string }) => {
     if (e?.activeLabel) {
       setRefAreaLeft(e.activeLabel);
       isDragging.current = true;
     }
   }, []);
 
-  const handleMouseMove = useCallback((e: any) => {
+  const handleMouseMove = useCallback((e: { activeLabel?: string }) => {
     if (isDragging.current && e?.activeLabel) {
       setRefAreaRight(e.activeLabel);
     }
@@ -164,7 +178,7 @@ export function ForecastChart({ data, title, unit, highlightMonth, multiLines, m
 
   if (multiLines && multiData) {
     const chartData = multiData.map((d) => {
-      const out: any = { month: d.month };
+      const out: MultiLinePoint = { month: d.month };
       for (const line of multiLines) {
         const raw = d[line.key];
         out[line.key] = typeof raw === "number" ? toMillions(raw) : raw;
@@ -172,9 +186,9 @@ export function ForecastChart({ data, title, unit, highlightMonth, multiLines, m
       return out;
     });
 
-    const allMonths = chartData.map((d: any) => d.month);
+    const allMonths = chartData.map((d) => d.month);
     const filteredData = zoomLeft && zoomRight
-      ? chartData.filter((d: any) => d.month >= zoomLeft && d.month <= zoomRight)
+      ? chartData.filter((d) => d.month >= zoomLeft && d.month <= zoomRight)
       : chartData;
 
     return (
@@ -290,3 +304,4 @@ export function ForecastChart({ data, title, unit, highlightMonth, multiLines, m
 }
 
 export { COLORS };
+export type { MultiLinePoint };
