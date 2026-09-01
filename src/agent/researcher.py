@@ -114,26 +114,6 @@ async def fetch_page(url: str, timeout: int = 30) -> str | None:
         return None
 
 
-async def download_pdf(url: str, filename: str) -> Path | None:
-    """Download a PDF to the agent cache directory."""
-    dest = _CACHE_DIR / filename
-    if dest.exists():
-        return dest
-    try:
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=60,
-            headers={"User-Agent": "MIP-ResearchAgent/1.0"},
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            dest.write_bytes(resp.content)
-            logger.info(f"Downloaded PDF: {filename} ({len(resp.content)} bytes)")
-            return dest
-    except Exception as e:
-        logger.warning(f"PDF download failed {url}: {e}")
-        return None
-
 
 # ── HTML parsers ──────────────────────────────────────────────────────────
 
