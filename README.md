@@ -85,49 +85,43 @@ Raw data goes into `data/raw/`. Processed Parquet files go into `data/processed/
 
 ## Models
 
+<!-- AUTO-GENERATED:MODELS:START -->
+
 ### Aggregate — India Total (CC & DC Outstanding)
 
-**Architecture:** Weighted ensemble of Prophet + ARIMA(1,1,1) + Damped ETS
+**Architecture:** Weighted ensemble of 5 models (Prophet + ARIMA + ARIMAX + ETS + Direct multi-horizon)
 
-| Series | Prophet | ARIMA | ETS | CV MAPE |
-|--------|---------|-------|-----|---------|
-| CC Outstanding | 35% | 39% | 26% | ~3.5% |
-| DC Outstanding | 35% | 65% | 0% | ~5.7% |
-
-**Regressors:**
-- CC: `repo_rate` at lag 9 months (RBI rate → bank risk appetite → card issuance)
-- DC: `debit_card_vol_lakh` at lag 4 months (transaction volume → issuance) + `debit_card_pos_vol_lakh` (UPI displacement signal)
-
-**Structural events coded:**
-- Demonetisation (Nov 2016) — changepoint
-- COVID lockdown (Apr–May 2020) — pulse dummy
-- PMJDY / Jan Dhan (Aug 2014) — changepoint, DC only
-- UPI inflection (Jan 2022) — changepoint, DC only
-- RBI credit tightening (Nov 2023) — step dummy, CC only
+| Series | Prophet | ARIMA | ARIMAX | ETS | Direct | CV MAPE |
+|--------|---------|-------|--------|-----|--------|---------|
+| CC Outstanding | — | — | — | — | — | — |
+| DC Outstanding | — | — | — | — | — | — |
 
 **Confidence intervals:** Conformal prediction intervals from walk-forward CV residual quantiles (5th/95th percentile). Distribution-free — no normality assumption.
 
 ### Bank-Level (~80 models)
 
-Each bank × card type gets its own model:
+Each bank x card type gets its own model:
 - **Large/complex banks** → Prophet with logistic growth caps
 - **Small/stable banks** → Holt-Winters ETS
 
 Bank forecasts are summed and reconciled against the aggregate total (residual adjustment).
 
-**Median CV MAPE:** CC banks ~4–6%, DC banks ~6–9%
-
-### Transaction Volumes
-
-| Model | Regressors | Training Start | CV MAPE |
-|-------|-----------|----------------|---------|
-| CC Txn Volume | CC outstanding (multiplicative) | 2013 | ~13.6% |
-| DC Txn Volume | None (trend only) | 2022 | ~7% |
-| UPI Volume | None (trend only) | All data | ~12.3% |
+**Median CV MAPE:** CC banks —, DC banks —
 
 ### Cross-Validation
 
 Walk-forward CV: 48-month initial window, 12-month horizon, 6-month step. Model is always tested on data it has never seen.
+
+**Structural events coded:**
+- PMJDY launch (2014-08-15) — positive
+- Demonetisation (2016-11-08) — positive
+- PSI format change (2019-11-01) — definitional_break
+- COVID lockdown (2020-04-01) — negative
+- RBI card validity extension to 7 years (2022-07-01) — positive_dc
+- UPI inflection (2022-01-01) — negative_debit
+- RBI unsecured lending tightening (2023-11-01) — negative_credit
+
+<!-- AUTO-GENERATED:MODELS:END -->
 
 ---
 
