@@ -183,24 +183,43 @@ ALTER TABLE scraper_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pipeline_runs ENABLE ROW LEVEL SECURITY;
 
 -- Anon can read forecast/processed/model data (public dashboard)
+DROP POLICY IF EXISTS "anon_read_forecasts_bank" ON forecasts_bank;
 CREATE POLICY "anon_read_forecasts_bank" ON forecasts_bank FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_forecasts_agg" ON forecasts_aggregate;
 CREATE POLICY "anon_read_forecasts_agg" ON forecasts_aggregate FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_model_meta" ON model_metadata;
 CREATE POLICY "anon_read_model_meta" ON model_metadata FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_processed_agg" ON processed_aggregate;
 CREATE POLICY "anon_read_processed_agg" ON processed_aggregate FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_processed_bank" ON processed_bank_series;
 CREATE POLICY "anon_read_processed_bank" ON processed_bank_series FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_scraper_runs" ON scraper_runs;
 CREATE POLICY "anon_read_scraper_runs" ON scraper_runs FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_pipeline_runs" ON pipeline_runs;
 CREATE POLICY "anon_read_pipeline_runs" ON pipeline_runs FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_raw_npci" ON raw_npci_upi;
 CREATE POLICY "anon_read_raw_npci" ON raw_npci_upi FOR SELECT TO anon USING (true);
 
 -- Service role has full access (used by pipeline)
+DROP POLICY IF EXISTS "service_all_raw_bankwise" ON raw_bankwise;
 CREATE POLICY "service_all_raw_bankwise" ON raw_bankwise FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_raw_psi" ON raw_psi;
 CREATE POLICY "service_all_raw_psi" ON raw_psi FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_raw_repo" ON raw_repo_rate;
 CREATE POLICY "service_all_raw_repo" ON raw_repo_rate FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_raw_npci" ON raw_npci_upi;
 CREATE POLICY "service_all_raw_npci" ON raw_npci_upi FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_processed_bank" ON processed_bank_series;
 CREATE POLICY "service_all_processed_bank" ON processed_bank_series FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_processed_agg" ON processed_aggregate;
 CREATE POLICY "service_all_processed_agg" ON processed_aggregate FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_forecasts_bank" ON forecasts_bank;
 CREATE POLICY "service_all_forecasts_bank" ON forecasts_bank FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_forecasts_agg" ON forecasts_aggregate;
 CREATE POLICY "service_all_forecasts_agg" ON forecasts_aggregate FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_model_meta" ON model_metadata;
 CREATE POLICY "service_all_model_meta" ON model_metadata FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_scraper_runs" ON scraper_runs;
 CREATE POLICY "service_all_scraper_runs" ON scraper_runs FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_pipeline_runs" ON pipeline_runs;
 CREATE POLICY "service_all_pipeline_runs" ON pipeline_runs FOR ALL TO service_role USING (true) WITH CHECK (true);
