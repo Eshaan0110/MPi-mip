@@ -81,21 +81,27 @@ ALTER TABLE agent_findings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_retrains ENABLE ROW LEVEL SECURITY;
 
 -- Anon can read findings (for the dashboard)
+DROP POLICY IF EXISTS "anon_read_findings" ON agent_findings;
 CREATE POLICY "anon_read_findings" ON agent_findings
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "anon_read_runs" ON agent_runs;
 CREATE POLICY "anon_read_runs" ON agent_runs
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "anon_read_retrains" ON agent_retrains;
 CREATE POLICY "anon_read_retrains" ON agent_retrains
     FOR SELECT USING (true);
 
 -- Service role has full access (used by the agent pipeline)
+DROP POLICY IF EXISTS "service_full_findings" ON agent_findings;
 CREATE POLICY "service_full_findings" ON agent_findings
     FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "service_full_runs" ON agent_runs;
 CREATE POLICY "service_full_runs" ON agent_runs
     FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "service_full_retrains" ON agent_retrains;
 CREATE POLICY "service_full_retrains" ON agent_retrains
     FOR ALL USING (true) WITH CHECK (true);
