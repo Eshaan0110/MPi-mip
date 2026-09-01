@@ -335,23 +335,27 @@ def sync_model_metadata(client):
 
 
 def seed_scraper_runs(client):
-    """Seed scraper_runs with initial records so Data Status page isn't empty."""
+    """Seed scraper_runs with initial records so Data Status page isn't empty.
+    Skips if rows already exist to avoid duplicates on re-runs."""
     logger.info("Seeding scraper runs...")
+
+    if DRY_RUN:
+        logger.info("  [DRY RUN] Would seed scraper_run records (if empty)")
+        return 0
+
+    existing = client.table("scraper_runs").select("id", count="exact").limit(1).execute()
+    if existing.count and existing.count > 0:
+        logger.info("  scraper_runs already has data — skipping seed")
+        return 0
+
     sources = {
         "rbi_bankwise": 948,
         "npci_upi": 102,
     }
-    rows = []
-    for source, count in sources.items():
-        rows.append({
-            "source": source,
-            "status": "success",
-            "records_written": count,
-        })
-
-    if DRY_RUN:
-        logger.info(f"  [DRY RUN] Would insert {len(rows)} scraper_run records")
-        return 0
+    rows = [
+        {"source": source, "status": "success", "records_written": count}
+        for source, count in sources.items()
+    ]
 
     for row in rows:
         client.table("scraper_runs").insert(row).execute()

@@ -87,8 +87,10 @@ def save_articles_batch(run_id: str, articles: list[dict[str, Any]]) -> int:
 
 def get_recent_findings(days: int = 30, limit: int = 200) -> list[dict]:
     """Fetch recent findings for feature engineering."""
+    from datetime import timedelta
+
     client = _get_client()
-    cutoff = datetime.now(timezone.utc).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     result = (
         client.table("agent_findings")
         .select("*")

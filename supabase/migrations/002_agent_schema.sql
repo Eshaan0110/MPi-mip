@@ -73,12 +73,30 @@ CREATE INDEX IF NOT EXISTS idx_retrains_metric ON agent_retrains(metric);
 CREATE INDEX IF NOT EXISTS idx_retrains_promoted ON agent_retrains(promoted);
 
 -- ============================================================
+-- AGENT ARTICLES — articles collected during each run
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS agent_articles (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id          UUID REFERENCES agent_runs(id),
+    title           TEXT NOT NULL,
+    source          TEXT DEFAULT '',
+    url             TEXT DEFAULT '',
+    signals_extracted INTEGER DEFAULT 0,
+    discovered_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_articles_run ON agent_articles(run_id);
+CREATE INDEX IF NOT EXISTS idx_articles_discovered ON agent_articles(discovered_at DESC);
+
+-- ============================================================
 -- RLS Policies
 -- ============================================================
 
 ALTER TABLE agent_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_findings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_retrains ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_articles ENABLE ROW LEVEL SECURITY;
 
 -- Anon can read findings (for the dashboard)
 DROP POLICY IF EXISTS "anon_read_findings" ON agent_findings;
@@ -104,4 +122,12 @@ CREATE POLICY "service_full_runs" ON agent_runs
 
 DROP POLICY IF EXISTS "service_full_retrains" ON agent_retrains;
 CREATE POLICY "service_full_retrains" ON agent_retrains
+    FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "anon_read_articles" ON agent_articles;
+CREATE POLICY "anon_read_articles" ON agent_articles
+    FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "service_full_articles" ON agent_articles;
+CREATE POLICY "service_full_articles" ON agent_articles
     FOR ALL USING (true) WITH CHECK (true);
