@@ -152,6 +152,41 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 );
 
 -- ============================================================
+-- SCENARIOS (ensemble scenario analysis)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS scenarios (
+    id              BIGSERIAL PRIMARY KEY,
+    forecast_month  DATE NOT NULL,
+    scenario        TEXT NOT NULL,
+    repo_rate       DOUBLE PRECISION,
+    label           TEXT,
+    yhat            DOUBLE PRECISION NOT NULL,
+    yhat_prophet    DOUBLE PRECISION,
+    yhat_arima      DOUBLE PRECISION,
+    yhat_arimax     DOUBLE PRECISION,
+    yhat_ets        DOUBLE PRECISION,
+    yhat_direct     DOUBLE PRECISION,
+    generated_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (scenario, forecast_month)
+);
+
+-- ============================================================
+-- SCORECARD (rolling forecast-vs-actual accuracy)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS scorecard_scores (
+    id              BIGSERIAL PRIMARY KEY,
+    model_name      TEXT NOT NULL,
+    forecast_month  DATE NOT NULL,
+    forecast_value  DOUBLE PRECISION NOT NULL,
+    actual_value    DOUBLE PRECISION NOT NULL,
+    ape             DOUBLE PRECISION NOT NULL,
+    scored_at       TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (model_name, forecast_month)
+);
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 
@@ -165,6 +200,8 @@ CREATE INDEX IF NOT EXISTS idx_forecasts_bank_future ON forecasts_bank (forecast
 CREATE INDEX IF NOT EXISTS idx_forecasts_agg ON forecasts_aggregate (metric, forecast_month);
 CREATE INDEX IF NOT EXISTS idx_scraper_runs_source ON scraper_runs (source, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs (status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scenarios_scenario ON scenarios (scenario, forecast_month);
+CREATE INDEX IF NOT EXISTS idx_scorecard_model ON scorecard_scores (model_name, forecast_month);
 
 -- ============================================================
 -- ROW LEVEL SECURITY (read-only for anon, full for service role)
@@ -181,6 +218,8 @@ ALTER TABLE forecasts_aggregate ENABLE ROW LEVEL SECURITY;
 ALTER TABLE model_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scraper_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pipeline_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scenarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scorecard_scores ENABLE ROW LEVEL SECURITY;
 
 -- Anon can read forecast/processed/model data (public dashboard)
 DROP POLICY IF EXISTS "anon_read_forecasts_bank" ON forecasts_bank;
@@ -199,6 +238,10 @@ DROP POLICY IF EXISTS "anon_read_pipeline_runs" ON pipeline_runs;
 CREATE POLICY "anon_read_pipeline_runs" ON pipeline_runs FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "anon_read_raw_npci" ON raw_npci_upi;
 CREATE POLICY "anon_read_raw_npci" ON raw_npci_upi FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_scenarios" ON scenarios;
+CREATE POLICY "anon_read_scenarios" ON scenarios FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_read_scorecard" ON scorecard_scores;
+CREATE POLICY "anon_read_scorecard" ON scorecard_scores FOR SELECT TO anon USING (true);
 
 -- Service role has full access (used by pipeline)
 DROP POLICY IF EXISTS "service_all_raw_bankwise" ON raw_bankwise;
@@ -223,3 +266,7 @@ DROP POLICY IF EXISTS "service_all_scraper_runs" ON scraper_runs;
 CREATE POLICY "service_all_scraper_runs" ON scraper_runs FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "service_all_pipeline_runs" ON pipeline_runs;
 CREATE POLICY "service_all_pipeline_runs" ON pipeline_runs FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_scenarios" ON scenarios;
+CREATE POLICY "service_all_scenarios" ON scenarios FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_scorecard" ON scorecard_scores;
+CREATE POLICY "service_all_scorecard" ON scorecard_scores FOR ALL TO service_role USING (true) WITH CHECK (true);

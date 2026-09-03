@@ -58,3 +58,24 @@ export interface DataStatus {
   status: string;
   latest_data_month: string | null;
 }
+
+export interface Scenario {
+  forecast_month: string;
+  scenario: string;
+  repo_rate: number | null;
+  label: string | null;
+  yhat: number;
+  yhat_prophet: number | null;
+  yhat_arima: number | null;
+  yhat_arimax: number | null;
+  yhat_ets: number | null;
+  yhat_direct: number | null;
+}
+
+export interface ScorecardScore {
+  model_name: string;
+  forecast_month: string;
+  forecast_value: number;
+  actual_value: number;
+  ape: number;
+}

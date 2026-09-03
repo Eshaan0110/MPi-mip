@@ -11,6 +11,7 @@ const links = [
   { href: "/pipeline", label: "Run Pipeline" },
   { href: "/status", label: "Data Status" },
   { href: "/models", label: "Model Performance" },
+  { href: "/scorecard", label: "Scorecard" },
   { href: "/about", label: "About" },
   { href: "/agent", label: "AI Agent" },
 ];

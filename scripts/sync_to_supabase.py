@@ -363,6 +363,65 @@ def seed_scraper_runs(client):
     return len(rows)
 
 
+def sync_scenarios(client):
+    """Sync ensemble scenario analysis to Supabase."""
+    logger.info("Syncing scenarios...")
+    sc_path = PROCESSED / "cc_scenarios.csv"
+    if not sc_path.exists():
+        logger.info("  No cc_scenarios.csv found — skipping")
+        return 0
+
+    sc = pd.read_csv(sc_path)
+    if sc.empty:
+        return 0
+
+    rows = []
+    for _, r in sc.iterrows():
+        row = {
+            "forecast_month": str(r["ds"])[:10],
+            "scenario": r["scenario"],
+            "repo_rate": float(r["repo_rate"]) if pd.notna(r.get("repo_rate")) else None,
+            "label": r.get("label", ""),
+            "yhat": float(r["yhat"]),
+        }
+        for member in ["prophet", "arima", "arimax", "ets", "direct"]:
+            col = f"yhat_{member}"
+            row[f"yhat_{member}"] = float(r[col]) if col in r and pd.notna(r.get(col)) else None
+        rows.append(row)
+
+    if DRY_RUN:
+        logger.info(f"  [DRY RUN] Would upsert {len(rows)} scenario rows")
+        return 0
+
+    if not DRY_RUN:
+        client.table("scenarios").delete().neq("id", 0).execute()
+
+    df = pd.DataFrame(rows)
+    return upsert_df(client, "scenarios", df, ["scenario", "forecast_month"])
+
+
+def sync_scorecard(client):
+    """Generate and sync scorecard scores (forecast vs actual)."""
+    logger.info("Syncing scorecard scores...")
+    try:
+        from src.modelling.scorecard import generate_all_scores
+    except ImportError:
+        logger.warning("Could not import scorecard module — skipping")
+        return 0
+
+    scores = generate_all_scores()
+    if not scores:
+        logger.info("  No scorecard scores to sync")
+        return 0
+
+    if DRY_RUN:
+        logger.info(f"  [DRY RUN] Would upsert {len(scores)} scorecard rows")
+        return 0
+
+    df = pd.DataFrame(scores)
+    return upsert_df(client, "scorecard_scores", df, ["model_name", "forecast_month"])
+
+
 def main():
     logger.info(f"{'[DRY RUN] ' if DRY_RUN else ''}Syncing local data to Supabase...")
 
@@ -375,6 +434,8 @@ def main():
     total += sync_processed_bank_series(client)
     total += sync_raw_npci(client)
     total += sync_model_metadata(client)
+    total += sync_scenarios(client)
+    total += sync_scorecard(client)
     total += seed_scraper_runs(client)
 
     logger.info(f"Done. Total rows synced: {total}")
