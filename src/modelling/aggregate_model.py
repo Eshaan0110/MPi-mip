@@ -778,27 +778,91 @@ CC_SCENARIOS = {
 
 
 def run_scenario_analysis(model, config: dict, train_df: pd.DataFrame, master: pd.DataFrame) -> pd.DataFrame:
-    """Run CC forecast under different repo rate scenarios."""
+    """Run CC forecast under repo rate scenarios using the full ensemble.
+
+    For each scenario, re-runs Prophet + ARIMAX with modified repo rate
+    values in the future window, keeps ARIMA/ETS/Direct unchanged (they
+    are univariate), and applies ensemble weights to produce the final
+    scenario forecast.
+    """
     if "credit" not in config["name"]:
         return pd.DataFrame()
 
-    results = []
-    for name, scenario in CC_SCENARIOS.items():
-        future_df = build_future_df(train_df, config, master)
-        last_hist = train_df["ds"].max()
-        mask = future_df["ds"] > last_hist
-        if "repo_rate_lag9" in future_df.columns:
-            future_df.loc[mask, "repo_rate_lag9"] = scenario["repo_rate"]
+    horizon = FORECAST_CONFIG.get("periods", 24)
+    y = train_df["y"].values
+    log_t = config.get("log_transform", False)
+    last_hist = train_df["ds"].max()
 
-        fc = model.predict(future_df)
-        fc_only = fc[fc["ds"] > last_hist][["ds", "yhat"]].copy()
-        fc_only["scenario"] = name
-        fc_only["repo_rate"] = scenario["repo_rate"]
-        results.append(fc_only)
+    arima_yhat = _fit_arima_forecast(y, horizon, log_transform=log_t)
+    ets_yhat = _fit_ets_forecast(y, horizon, log_transform=log_t)
+    direct_yhat = _fit_direct_multihorizon(y, horizon, log_transform=log_t)
+
+    weights = _estimate_ensemble_weights(y, config, horizon, train_df=train_df)
+
+    results = []
+    for sc_name, scenario in CC_SCENARIOS.items():
+        future_df = build_future_df(train_df, config, master)
+        mask = future_df["ds"] > last_hist
+
+        repo_col = None
+        for col in future_df.columns:
+            if "repo_rate" in col:
+                repo_col = col
+                break
+        if repo_col:
+            future_df.loc[mask, repo_col] = scenario["repo_rate"]
+
+        prophet_fc = model.predict(future_df)
+        prophet_yhat = prophet_fc[prophet_fc["ds"] > last_hist]["yhat"].values[:horizon]
+        prophet_dates = prophet_fc[prophet_fc["ds"] > last_hist]["ds"].values[:horizon]
+
+        reg_cols = _get_regressor_cols(config, train_df)
+        if reg_cols:
+            exog_train = train_df[reg_cols].values
+            exog_future = future_df[future_df["ds"] > last_hist][reg_cols].values
+            arimax_yhat = _fit_arimax_forecast(y, exog_train, exog_future, horizon, log_transform=log_t)
+        else:
+            arimax_yhat = None
+
+        forecasts = {}
+        if prophet_yhat is not None and len(prophet_yhat) == horizon:
+            forecasts["prophet"] = prophet_yhat
+        if arima_yhat is not None and len(arima_yhat) == horizon:
+            forecasts["arima"] = arima_yhat
+        if arimax_yhat is not None and len(arimax_yhat) == horizon:
+            forecasts["arimax"] = arimax_yhat
+        if ets_yhat is not None and len(ets_yhat) == horizon:
+            forecasts["ets"] = ets_yhat
+        if direct_yhat is not None and len(direct_yhat) == horizon:
+            forecasts["direct"] = direct_yhat
+
+        if not forecasts:
+            continue
+
+        total_w = sum(weights[k] for k in forecasts if weights.get(k, 0) > 0)
+        ensemble = np.zeros(horizon)
+        for member, fc_arr in forecasts.items():
+            w = weights.get(member, 0) / total_w if total_w > 0 else 1.0 / len(forecasts)
+            ensemble += w * fc_arr
+
+        sc_df = pd.DataFrame({
+            "ds": prophet_dates[:horizon],
+            "yhat": ensemble,
+            "scenario": sc_name,
+            "repo_rate": scenario["repo_rate"],
+            "label": scenario["label"],
+        })
+        for member, fc_arr in forecasts.items():
+            sc_df[f"yhat_{member}"] = fc_arr
+
+        results.append(sc_df)
+
+    if not results:
+        return pd.DataFrame()
 
     scenario_df = pd.concat(results, ignore_index=True)
     scenario_df.to_csv(_PROCESSED / "cc_scenarios.csv", index=False)
-    logger.info(f"  Scenario analysis saved ({len(CC_SCENARIOS)} scenarios)")
+    logger.info(f"  Ensemble scenario analysis saved ({len(CC_SCENARIOS)} scenarios, {len(scenario_df)} rows)")
     return scenario_df
 
 
