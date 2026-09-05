@@ -263,6 +263,46 @@ def build_residual_prophet_df(
 
 # ── Main loader ────────────────────────────────────────────────────────────
 
+def check_data_freshness(
+    df: pd.DataFrame,
+    card_type: str,
+    max_stale_months: int = 3,
+) -> dict[str, str]:
+    """D9: Check bank-level data freshness against aggregate (PSI).
+
+    Compares the latest date in bankwise data to the latest PSI date.
+    Returns dict of bank_name -> warning message for banks whose data
+    ends more than `max_stale_months` before the PSI series.
+    """
+    try:
+        psi = _load_psi_series(card_type)
+        psi_latest = psi.index.max()
+    except FileNotFoundError:
+        return {}
+
+    bank_latest = df.groupby("bank_name")["date"].max()
+    stale = {}
+    for bank, latest in bank_latest.items():
+        months_behind = (psi_latest.year - latest.year) * 12 + (psi_latest.month - latest.month)
+        if months_behind > max_stale_months:
+            stale[str(bank)] = (
+                f"data ends {latest:%b %Y}, PSI extends to {psi_latest:%b %Y} "
+                f"({months_behind} months behind)"
+            )
+
+    if stale:
+        logger.warning(
+            f"  [{card_type.upper()}] D9 freshness: {len(stale)} banks are stale "
+            f"(>{max_stale_months} months behind PSI)"
+        )
+        for bank, msg in stale.items():
+            logger.warning(f"    {bank}: {msg}")
+    else:
+        logger.info(f"  [{card_type.upper()}] D9 freshness: all banks within {max_stale_months} months of PSI")
+
+    return stale
+
+
 def load_bank_data(card_type: str) -> dict:
     """Full pipeline: load -> clean -> select -> build Prophet DFs."""
     assert card_type in ("cc", "dc")
@@ -274,6 +314,8 @@ def load_bank_data(card_type: str) -> dict:
 
     df = _clean_bankwise(raw, target_col)
     logger.info(f"  After cleaning: {len(df):,} rows | {df['bank_name'].nunique()} banks")
+
+    stale_banks = check_data_freshness(df, card_type)
 
     top_banks, residual_banks = _select_banks(df, target_col, card_type)
     coverage_pct = _log_coverage(df, top_banks, target_col)
@@ -292,6 +334,7 @@ def load_bank_data(card_type: str) -> dict:
         "bank_dfs":       bank_dfs,
         "residual_df":    residual_df,
         "coverage_pct":   coverage_pct,
+        "stale_banks":    stale_banks,
     }
 
 
