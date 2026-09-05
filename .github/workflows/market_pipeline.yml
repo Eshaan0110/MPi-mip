@@ -38,7 +38,7 @@ jobs:
       - name: Validate market code
         id: check
         run: |
-          python -c "
+          uv run python -c "
           from src.markets import get_adapter
           a = get_adapter('${{ inputs.market }}')
           print(f'market_name={a.meta.name}')
@@ -130,7 +130,7 @@ jobs:
       - name: Send alerts (email + Teams)
         if: always()
         run: |
-          python -c "
+          uv run python -c "
           from src.utils.email_alert import notify_all
           status = 'failure' if 'failure' in '${{ needs.scrape.result }},${{ needs.train.result }},${{ needs.sync.result }}' else 'success'
           notify_all(

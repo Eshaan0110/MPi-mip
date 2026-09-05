@@ -58,7 +58,7 @@ jobs:
       - name: Send alerts (email + Teams)
         if: always()
         run: |
-          python -c "
+          uv run python -c "
           from src.utils.email_alert import notify_all
           status = 'failure' if '${{ needs.agent.result }}' == 'failure' else 'success'
           notify_all(
