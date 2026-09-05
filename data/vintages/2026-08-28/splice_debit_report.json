@@ -1,0 +1,14 @@
+{
+  "series_name": "debit_cards_outstanding_lakh",
+  "break_date": "2019-11-01 00:00:00",
+  "pre_intercept": 8160.570917999999,
+  "pre_slope": 94.17301799999976,
+  "post_intercept": 8206.971048000001,
+  "post_slope": -12.121117000000638,
+  "pre_extrapolated_at_break": 8537.26299,
+  "post_at_break": 8206.971048000001,
+  "additive_shift": -330.291941999998,
+  "relative_shift_pct": -3.8688270747531237,
+  "n_pre": 4,
+  "n_post": 4
+}

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import tomli
+import tomllib
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROCESSED = PROJECT_ROOT / "data" / "processed"
@@ -32,7 +32,7 @@ END_MARKER = "<!-- AUTO-GENERATED:MODELS:END -->"
 
 def _load_config() -> dict:
     with open(CONFIG_PATH, "rb") as f:
-        return tomli.load(f)
+        return tomllib.load(f)
 
 
 def _load_cv_metrics() -> dict[str, float]:

@@ -1,0 +1,13 @@
+date,forecast,forecast_lower,forecast_upper,trend,bank_name,card_type
+2017-04-01,17195893.447155535,15505464.81896352,18958172.22934966,17049438.16620662,State Bank Of Hyderabad,dc
+2017-05-01,0.0,0.0,0.0,17226744.740573753,State Bank Of Hyderabad,dc
+2017-06-01,0.0,0.0,0.0,17409961.53408645,State Bank Of Hyderabad,dc
+2017-07-01,0.0,0.0,0.0,17587268.10845358,State Bank Of Hyderabad,dc
+2017-08-01,0.0,0.0,0.0,17770484.901966278,State Bank Of Hyderabad,dc
+2017-09-01,0.0,0.0,0.0,17953701.695478976,State Bank Of Hyderabad,dc
+2017-10-01,0.0,0.0,0.0,18131008.269846108,State Bank Of Hyderabad,dc
+2017-11-01,0.0,0.0,0.0,18314225.063358806,State Bank Of Hyderabad,dc
+2017-12-01,0.0,0.0,0.0,18491531.637725934,State Bank Of Hyderabad,dc
+2018-01-01,0.0,0.0,0.0,18674748.431238633,State Bank Of Hyderabad,dc
+2018-02-01,0.0,0.0,0.0,18857965.22475133,State Bank Of Hyderabad,dc
+2018-03-01,0.0,0.0,0.0,19023451.36082732,State Bank Of Hyderabad,dc

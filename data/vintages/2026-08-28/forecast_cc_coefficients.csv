@@ -1,0 +1,5 @@
+model,component,type,mean_coeff
+credit_cards_outstanding_lakh,repo_rate_lag9,regressor_beta,0.0091798413
+credit_cards_outstanding_lakh,event_covid_shock,regressor_beta,0.0059062393
+credit_cards_outstanding_lakh,event_rbi_credit_tightening,regressor_beta,-0.019148986
+credit_cards_outstanding_lakh,changepoint_0,trend_delta,0.77673422

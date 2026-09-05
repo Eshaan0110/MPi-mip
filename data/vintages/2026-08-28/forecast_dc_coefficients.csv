@@ -1,0 +1,8 @@
+model,component,type,mean_coeff
+debit_cards_outstanding_lakh,debit_card_vol_lakh_lag4,regressor_beta,-0.0059426668
+debit_cards_outstanding_lakh,debit_card_pos_vol_lakh,regressor_beta,-0.0018172782
+debit_cards_outstanding_lakh,event_covid_shock,regressor_beta,0.015309379
+debit_cards_outstanding_lakh,event_card_validity_7yr,regressor_beta,0.001234616
+debit_cards_outstanding_lakh,changepoint_0,trend_delta,2.1731586
+debit_cards_outstanding_lakh,changepoint_1,trend_delta,-2.114355
+debit_cards_outstanding_lakh,changepoint_3,trend_delta,-0.49593289

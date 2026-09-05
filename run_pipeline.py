@@ -1,13 +1,14 @@
 """
-MIP Phase 1 -- Full End-to-End Pipeline Runner
-================================================
+MIP — Full End-to-End Pipeline Runner
+======================================
 Executes ingestion, modelling, analysis, and dashboard rebuild in order.
+Supports multi-market via --market flag (default: IN).
 
 Usage:
-    uv run python run_pipeline.py                 # full run with CV (~20 min)
-    uv run python run_pipeline.py --no-cv         # skip CV (~2 min)
-    uv run python run_pipeline.py --skip-ingestion # models only (data already fresh)
-    uv run python run_pipeline.py --skip-ingestion --no-cv  # fastest possible
+    uv run python run_pipeline.py                       # full India run with CV
+    uv run python run_pipeline.py --no-cv               # skip CV (~2 min)
+    uv run python run_pipeline.py --skip-ingestion      # models only
+    uv run python run_pipeline.py --market IN --no-cv   # explicit market
 """
 
 import argparse
@@ -16,109 +17,68 @@ import sys
 import time
 from pathlib import Path
 
+from src.markets import get_adapter, list_markets
 
-STEPS = [
-    {
-        "name": "Ingestion",
-        "cmd": [sys.executable, "-m", "src.ingestion"],
-        "skip_flag": "skip_ingestion",
-    },
-    {
-        "name": "Aggregate Model (CC + DC Outstanding)",
-        "cmd": [sys.executable, "-m", "src.modelling.aggregate_model"],
-        "cv_flag": True,
-    },
-    {
-        "name": "Bank-Level Model (10 CC + 15 DC)",
-        "cmd": [sys.executable, "-m", "src.modelling.bank_model"],
-        "cv_flag": True,
-    },
-    {
-        "name": "Transaction Volume Models (CC / DC / UPI)",
-        "cmd": [sys.executable, "-m", "src.modelling.txn_volume_model"],
-        "cv_flag": True,
-    },
-    {
-        "name": "UPI Displacement Analysis",
-        "cmd": [sys.executable, "-m", "src.modelling.upi_analysis"],
-    },
-    {
-        "name": "Rebuild Dashboard",
-        "cmd": [sys.executable, "scripts/rebuild_dashboard.py"],
-    },
-]
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def _build_cmd(step: dict) -> list[str]:
+    """Build the subprocess command from a pipeline step definition."""
+    if step.get("script"):
+        return [sys.executable, step["script"]]
+    return [sys.executable, "-m", step["module"]]
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MIP full pipeline runner")
-    parser.add_argument(
-        "--skip-ingestion",
-        action="store_true",
-        help="Skip ingestion step (data already fresh)",
-    )
-    parser.add_argument(
-        "--no-cv",
-        action="store_true",
-        help="Skip cross-validation in all modelling steps (~2 min vs ~20 min)",
-    )
+    available = ", ".join(list_markets())
+    parser = argparse.ArgumentParser(description="MIP pipeline runner")
+    parser.add_argument("--market", default="IN", help=f"Market code ({available})")
+    parser.add_argument("--skip-ingestion", action="store_true", help="Skip ingestion step")
+    parser.add_argument("--no-cv", action="store_true", help="Skip cross-validation")
     args = parser.parse_args()
 
-    total_steps = sum(
-        1 for s in STEPS
-        if not (s.get("skip_flag") and getattr(args, s["skip_flag"], False))
-    )
+    adapter = get_adapter(args.market)
+    steps = adapter.get_pipeline_steps()
+    meta = adapter.meta
+
+    active_steps = [
+        s for s in steps
+        if not (s.get("skip_flag") == "skip_ingestion" and args.skip_ingestion)
+    ]
+
+    print(f"\nMarket: {meta.name} ({meta.code}) — {meta.currency}")
+    print(f"Pipeline steps: {len(active_steps)}")
 
     t0 = time.time()
-    step_num = 0
 
-    for step in STEPS:
-        # Check skip flag
-        skip_flag = step.get("skip_flag")
-        if skip_flag and getattr(args, skip_flag, False):
-            continue
-
-        step_num += 1
-        cmd = list(step["cmd"])
-
-        # Append --no-cv if applicable
+    for i, step in enumerate(active_steps, 1):
+        cmd = _build_cmd(step)
         if args.no_cv and step.get("cv_flag"):
             cmd.append("--no-cv")
 
-        header = f"STEP {step_num}/{total_steps} -- {step['name']}"
-        print()
-        print("=" * 60)
-        print(header)
-        print("=" * 60)
-        print(f"  Command: {' '.join(cmd)}")
-        print()
+        header = f"STEP {i}/{len(active_steps)} -- {step['name']}"
+        print(f"\n{'=' * 60}\n{header}\n{'=' * 60}")
+        print(f"  Command: {' '.join(cmd)}\n")
 
         step_t0 = time.time()
-        result = subprocess.run(cmd, cwd=str(Path(__file__).resolve().parent))
-
-        step_elapsed = time.time() - step_t0
+        result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+        elapsed = time.time() - step_t0
 
         if result.returncode != 0:
-            print()
-            print("!" * 60)
+            print(f"\n{'!' * 60}")
             print(f"FAILED: {step['name']} (exit code {result.returncode})")
-            print(f"  Time spent: {step_elapsed:.1f}s")
-            print("!" * 60)
-            print()
-            print("Pipeline stopped. Fix the error above and re-run.")
+            print(f"  Time spent: {elapsed:.1f}s")
+            print(f"{'!' * 60}\n\nPipeline stopped. Fix the error above and re-run.")
             sys.exit(1)
 
-        print(f"  Done in {step_elapsed:.1f}s")
+        print(f"  Done in {elapsed:.1f}s")
 
     total = time.time() - t0
-    minutes = int(total // 60)
-    seconds = total % 60
+    minutes, seconds = int(total // 60), total % 60
 
-    print()
-    print("=" * 60)
-    print(f"PIPELINE COMPLETE -- {minutes}m {seconds:.0f}s total")
-    print("=" * 60)
-    print()
-    print("Open dashboard.html in your browser to view results.")
+    print(f"\n{'=' * 60}")
+    print(f"PIPELINE COMPLETE [{meta.code}] — {minutes}m {seconds:.0f}s total")
+    print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":

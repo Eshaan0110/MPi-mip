@@ -98,6 +98,101 @@ class TestP2_1_LogSpace:
 
 
 # ===================================================================
+# P2.6: Direct multi-horizon forecasting
+# ===================================================================
+
+class TestP2_6_DirectMultiHorizon:
+    def test_direct_multihorizon_exists(self):
+        from src.modelling.aggregate_model import _fit_direct_multihorizon
+        assert callable(_fit_direct_multihorizon)
+
+    def test_returns_correct_length(self):
+        from src.modelling.aggregate_model import _fit_direct_multihorizon
+        y = _make_monthly_series(84)
+        result = _fit_direct_multihorizon(y, 24)
+        assert result is not None
+        assert len(result) == 24
+
+    def test_no_jumps_at_boundaries(self):
+        """Segment transitions should be smooth (blended), not discontinuous."""
+        from src.modelling.aggregate_model import _fit_direct_multihorizon
+        y = _make_monthly_series(84)
+        result = _fit_direct_multihorizon(y, 24)
+        if result is not None:
+            for i in [5, 6, 11, 12]:
+                if i < 23:
+                    jump = abs(result[i+1] - result[i]) / abs(result[i])
+                    assert jump < 0.5, f"Large jump at step {i}: {jump:.2%}"
+
+    def test_direct_in_ensemble_weights(self):
+        from src.modelling.aggregate_model import ENSEMBLE_WEIGHTS
+        for key in ("cc", "dc"):
+            assert "direct" in ENSEMBLE_WEIGHTS[key]
+
+
+# ===================================================================
+# P2.5: UPI ensemble forecast
+# ===================================================================
+
+class TestP2_5_UPIEnsemble:
+    def test_txn_ensemble_weights_exist(self):
+        from src.modelling.txn_volume_model import TXN_ENSEMBLE_WEIGHTS
+        assert "forecast_upi_vol" in TXN_ENSEMBLE_WEIGHTS
+
+    def test_txn_arima_function(self):
+        from src.modelling.txn_volume_model import _fit_arima_fc
+        y = _make_monthly_series(84)
+        result = _fit_arima_fc(y, 12)
+        assert result is not None
+        assert len(result) == 12
+
+    def test_txn_ets_function(self):
+        from src.modelling.txn_volume_model import _fit_ets_fc
+        y = _make_monthly_series(84)
+        result = _fit_ets_fc(y, 12)
+        assert result is not None
+        assert len(result) == 12
+
+
+# ===================================================================
+# P2.3: Pooled bank model
+# ===================================================================
+
+class TestP2_3_PooledBank:
+    def test_pooled_seasonal_function(self):
+        from src.modelling.bank_model import _compute_pooled_seasonal
+        # Create fake bank DataFrames
+        bank_dfs = {}
+        for i in range(3):
+            n = 60
+            ds = pd.date_range("2018-01-01", periods=n, freq="MS")
+            y = 100 + 10 * np.sin(2 * np.pi * np.arange(n) / 12)
+            bank_dfs[f"Bank_{i}"] = pd.DataFrame({"ds": ds, "y": y})
+        seasonal = _compute_pooled_seasonal(bank_dfs)
+        assert len(seasonal) == 12
+        assert abs(seasonal.mean() - 1.0) < 0.01
+
+    def test_add_pooled_seasonal_regressor(self):
+        from src.modelling.bank_model import _add_pooled_seasonal_regressor
+        ds = pd.date_range("2020-01-01", periods=24, freq="MS")
+        df = pd.DataFrame({"ds": ds, "y": np.arange(24, dtype=float)})
+        seasonal = pd.Series({m: 1.0 + 0.05 * (m - 6) for m in range(1, 13)})
+        result = _add_pooled_seasonal_regressor(df, seasonal)
+        assert "pooled_seasonal" in result.columns
+        assert len(result) == 24
+
+
+# ===================================================================
+# P2.4: MinT reconciliation
+# ===================================================================
+
+class TestP2_4_MinT:
+    def test_reconcile_mint_exists(self):
+        from src.modelling.bank_model import _reconcile_mint
+        assert callable(_reconcile_mint)
+
+
+# ===================================================================
 # P2.7: Scale-independent metrics
 # ===================================================================
 

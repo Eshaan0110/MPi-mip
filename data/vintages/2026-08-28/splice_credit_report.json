@@ -1,0 +1,14 @@
+{
+  "series_name": "credit_cards_outstanding_lakh",
+  "break_date": "2019-11-01 00:00:00",
+  "pre_intercept": 504.78177,
+  "pre_slope": 10.10842000000002,
+  "post_intercept": 544.010808,
+  "post_slope": 9.029372999999989,
+  "pre_extrapolated_at_break": 545.21545,
+  "post_at_break": 544.010808,
+  "additive_shift": -1.2046420000000353,
+  "relative_shift_pct": -0.22094788399705753,
+  "n_pre": 4,
+  "n_post": 4
+}
