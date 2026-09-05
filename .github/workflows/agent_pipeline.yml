@@ -37,7 +37,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: [agent]
     if: always()
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
       - name: Report status
         run: |
           echo "## Agent Pipeline Summary" >> $GITHUB_STEP_SUMMARY
@@ -46,6 +55,23 @@ jobs:
           echo "| Agent | ${{ needs.agent.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Triggered: ${{ github.event_name }} at $(date -u)" >> $GITHUB_STEP_SUMMARY
+      - name: Send alerts (email + Teams)
+        if: always()
+        run: |
+          python -c "
+          from src.utils.email_alert import notify_all
+          status = 'failure' if '${{ needs.agent.result }}' == 'failure' else 'success'
+          notify_all(
+              'Agent Pipeline',
+              status=status,
+              details={
+                  'Agent': '${{ needs.agent.result }}',
+                  'Trigger': '${{ github.event_name }}',
+                  'Skip retrain': '${{ inputs.skip_retrain }}',
+              },
+              run_url='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+          )
+          "
       - name: Fail if agent failed
         if: needs.agent.result == 'failure'
         run: exit 1
