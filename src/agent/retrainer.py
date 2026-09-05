@@ -136,11 +136,32 @@ def retrain_aggregate(
                     regressors_used.append(col)
                     logger.info(f"  Added regressor: {col}")
 
-        new_mape = _cross_validate_ensemble(config, train_df, regressors_used)
+        new_mape, cv_folds = _cross_validate_ensemble(config, train_df, regressors_used)
 
         improvement = old_mape - new_mape
-        min_delta = 0.2  # require ≥0.2pp improvement to avoid greedy overfitting
-        promoted = improvement >= min_delta
+        min_delta = 0.2
+
+        # D8 gate 1: minimum improvement threshold
+        passes_delta = improvement >= min_delta
+
+        # D8 gate 2: CV stability — new model must not have any fold >2x the mean MAPE
+        max_fold = max(cv_folds) if cv_folds else float("inf")
+        mean_fold = np.mean(cv_folds) if cv_folds else float("inf")
+        passes_stability = max_fold < (mean_fold * 2.0)
+
+        # D8 gate 3: monotonicity — new model must improve in majority of CV folds
+        if cv_folds and old_mape is not None:
+            folds_improved = sum(1 for f in cv_folds if f < old_mape)
+            passes_monotonicity = folds_improved > len(cv_folds) / 2
+        else:
+            passes_monotonicity = False
+
+        promoted = passes_delta and passes_stability and passes_monotonicity
+
+        if not passes_stability:
+            logger.info(f"D8 stability gate failed: worst fold {max_fold:.2f}% > 2x mean {mean_fold:.2f}%")
+        if not passes_monotonicity:
+            logger.info(f"D8 monotonicity gate failed: only {folds_improved}/{len(cv_folds)} folds improved")
 
         if promoted:
             logger.info(
@@ -185,11 +206,8 @@ def _cross_validate_ensemble(
     config: dict,
     train_df: pd.DataFrame,
     extra_regressor_cols: list[str],
-) -> float:
-    """Run walk-forward CV on the ensemble and return mean MAPE.
-
-    This mirrors the CV logic in aggregate_model.py but with dynamic regressors.
-    """
+) -> tuple[float, list[float]]:
+    """Run walk-forward CV on the ensemble and return (mean_mape, per_fold_mapes)."""
     from prophet import Prophet
     from statsmodels.tsa.arima.model import ARIMA
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -258,7 +276,7 @@ def _cross_validate_ensemble(
         mape = np.mean(np.abs((actuals - ensemble_pred) / actuals)) * 100
         mapes.append(mape)
 
-    return float(np.mean(mapes))
+    return float(np.mean(mapes)), mapes
 
 
 def _promote_model(
