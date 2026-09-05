@@ -1,0 +1,151 @@
+name: MIP Market Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      market:
+        description: 'Market code (e.g. IN, UK, US, SG)'
+        required: true
+        default: 'IN'
+      skip_scraping:
+        description: 'Skip scraping (use existing data)'
+        required: false
+        default: 'false'
+      skip_training:
+        description: 'Skip model training'
+        required: false
+        default: 'false'
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  PYTHON_VERSION: '3.12'
+  MARKET: ${{ inputs.market }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      market_name: ${{ steps.check.outputs.market_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - name: Validate market code
+        id: check
+        run: |
+          python -c "
+          from src.markets import get_adapter
+          a = get_adapter('${{ inputs.market }}')
+          print(f'market_name={a.meta.name}')
+          " >> "$GITHUB_OUTPUT"
+
+  scrape:
+    runs-on: ubuntu-latest
+    needs: [validate]
+    timeout-minutes: 15
+    if: inputs.skip_scraping != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - run: uv run playwright install chromium --with-deps
+      - name: Run scrapers (${{ inputs.market }})
+        run: uv run python -m src.scraper --all --market ${{ inputs.market }}
+      - name: Upload raw data
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-data-${{ inputs.market }}
+          path: data/raw/
+          retention-days: 30
+
+  train:
+    runs-on: ubuntu-latest
+    needs: [validate, scrape]
+    timeout-minutes: 20
+    if: always() && (needs.scrape.result == 'success' || inputs.skip_scraping == 'true') && inputs.skip_training != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - name: Download scraped data
+        if: inputs.skip_scraping != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-data-${{ inputs.market }}
+          path: data/raw/
+      - name: Run pipeline (${{ inputs.market }})
+        run: uv run python run_pipeline.py --market ${{ inputs.market }}
+      - name: Upload processed data
+        uses: actions/upload-artifact@v4
+        with:
+          name: processed-data-${{ inputs.market }}
+          path: data/processed/
+          retention-days: 30
+
+  sync:
+    runs-on: ubuntu-latest
+    needs: [train]
+    timeout-minutes: 5
+    if: always() && needs.train.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - name: Download processed data
+        uses: actions/download-artifact@v4
+        with:
+          name: processed-data-${{ inputs.market }}
+          path: data/processed/
+      - name: Sync to Supabase
+        run: uv run python scripts/sync_to_supabase.py
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [validate, scrape, train, sync]
+    if: always()
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - name: Send alerts (email + Teams)
+        if: always()
+        run: |
+          python -c "
+          from src.utils.email_alert import notify_all
+          status = 'failure' if 'failure' in '${{ needs.scrape.result }},${{ needs.train.result }},${{ needs.sync.result }}' else 'success'
+          notify_all(
+              '${{ inputs.market }} Pipeline',
+              status=status,
+              details={
+                  'Market': '${{ inputs.market }}',
+                  'Scrape': '${{ needs.scrape.result }}',
+                  'Train': '${{ needs.train.result }}',
+                  'Sync': '${{ needs.sync.result }}',
+                  'Trigger': '${{ github.event_name }}',
+              },
+              run_url='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+          )
+          "
+      - name: Fail if any step failed
+        if: contains(needs.*.result, 'failure')
+        run: exit 1
