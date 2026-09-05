@@ -768,7 +768,8 @@ def run_bankwise_ingestion(settings=None, verbose: bool = False) -> pd.DataFrame
     Sources (in priority order for deduplication):
       1. RBI_Data_Debit_Credit_1.xlsx — consolidated file with monthly sheets
          (Format C, Jan 2022 - May 2025) and summary sheets.
-      2. Year-folder files (2011/ ... 2021/) — individual monthly .xls/.xlsx
+      2. Loose ATM*.XLSX files — individual monthly files scraped from RBI
+      3. Year-folder files (2011/ ... 2021/) — individual monthly .xls/.xlsx
 
     Outputs:
       data/processed/bankwise_cards_cc.parquet — credit card outstanding
@@ -788,7 +789,24 @@ def run_bankwise_ingestion(settings=None, verbose: bool = False) -> pd.DataFrame
         frames.append(df_consolidated)
         source_tags.append(f"consolidated: {len(df_consolidated)} rows")
 
-    # Source 2: Year-folder files
+    # Source 2: Loose monthly XLSX files (ATM*.XLSX scraped from RBI)
+    seen_loose: set[str] = set()
+    loose_files: list[Path] = []
+    for f in sorted(_RAW_DIR.iterdir()):
+        if f.is_file() and f.suffix.lower() == ".xlsx" and f != consolidated and f.name.lower() not in seen_loose:
+            seen_loose.add(f.name.lower())
+            loose_files.append(f)
+    if loose_files:
+        print(f"  Loose monthly files: {len(loose_files)}")
+    for f in loose_files:
+        try:
+            df_file = ingest(f, verbose=verbose)
+            df_file["source"] = "xlsx_monthly"
+            frames.append(df_file)
+        except Exception as e:
+            print(f"  WARNING: {f.name}: {e}", file=sys.stderr)
+
+    # Source 3: Year-folder files
     year_dirs = sorted(d for d in _RAW_DIR.iterdir() if d.is_dir() and d.name.isdigit())
     for year_dir in year_dirs:
         # Deduplicate: Windows glob is case-insensitive, so *.xlsx and *.XLSX
