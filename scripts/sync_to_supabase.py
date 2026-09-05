@@ -394,7 +394,13 @@ def sync_scenarios(client):
         return 0
 
     if not DRY_RUN:
-        client.table("scenarios").delete().neq("id", 0).execute()
+        try:
+            client.table("scenarios").delete().neq("id", 0).execute()
+        except Exception as e:
+            if "PGRST205" in str(e):
+                logger.warning("  'scenarios' table does not exist in Supabase — skipping. Create it to enable scenario sync.")
+                return 0
+            raise
 
     df = pd.DataFrame(rows)
     return upsert_df(client, "scenarios", df, ["scenario", "forecast_month"])
