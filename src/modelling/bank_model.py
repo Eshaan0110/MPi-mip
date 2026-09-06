@@ -654,8 +654,21 @@ def _run_residual_model(
     for col in ["forecast", "forecast_lower", "forecast_upper"]:
         fc[col] = fc[col].clip(lower=0)
 
+    # Full historical fit + forecast (for MinT variance estimation)
+    full = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+    full.columns = ["date", "yhat", "yhat_lower", "yhat_upper"]
+    actual_series = residual_df.set_index("ds")["y"]
+    if USE_LOG_TRANSFORM:
+        actual_series = np.expm1(actual_series)
+    full["actual"] = actual_series.reindex(full["date"]).values
+    full["bank_name"] = "_RESIDUAL"
+    full["card_type"] = card_type
+    for col in ["yhat", "yhat_lower", "yhat_upper"]:
+        full[col] = full[col].clip(lower=0)
+
     fc.to_parquet(bank_dir / f"{card_type}_residual_forecast.parquet", index=False)
     fc.to_csv(bank_dir / f"{card_type}_residual_forecast.csv", index=False)
+    full.to_parquet(bank_dir / f"{card_type}_residual_full.parquet", index=False)
     logger.info(
         f"  [{card_type.upper()}] Residual forecast: "
         f"{fc['forecast'].iloc[0]:,.0f} -> {fc['forecast'].iloc[-1]:,.0f}"
@@ -665,18 +678,51 @@ def _run_residual_model(
 
 # ── Aggregation + cross-check ──────────────────────────────────────────────
 
+def _estimate_insample_variance(
+    fc_df: pd.DataFrame,
+    historical_df: pd.DataFrame | None,
+) -> float:
+    """Estimate in-sample forecast error variance for one bottom-level series.
+
+    Uses overlap between the series' historical fit and actuals from the
+    full parquet (columns: date, yhat, actual). Falls back to forecast variance.
+    """
+    if historical_df is None or historical_df.empty:
+        return max(float(fc_df["forecast"].var()), 1.0)
+
+    hist = historical_df.copy()
+
+    # Full parquet uses (date, yhat, actual); CV uses (ds, y, yhat)
+    y_col = "actual" if "actual" in hist.columns else "y" if "y" in hist.columns else None
+    yhat_col = "yhat" if "yhat" in hist.columns else None
+
+    if y_col and yhat_col:
+        valid = hist.dropna(subset=[y_col, yhat_col]).tail(12)
+        if len(valid) >= 6:
+            resid = (valid[y_col] - valid[yhat_col]).values
+            return max(float(np.var(resid, ddof=1)), 1.0)
+
+    return max(float(fc_df["forecast"].var()), 1.0)
+
+
 def _reconcile_mint(
     bank_forecasts: list[pd.DataFrame],
     residual_fc: pd.DataFrame,
     card_type: str,
+    bank_histories: dict[str, pd.DataFrame] | None = None,
 ) -> list[pd.DataFrame]:
-    """MinT-style top-down reconciliation (P2.4).
+    """MinT reconciliation (P2.4) — Wickramasuriya et al. (2019).
 
-    Ensures bank forecasts + residual sum to the PSI aggregate forecast.
-    Uses proportional scaling: each bank's share of the bottom-up total
-    is preserved, but the level is adjusted to match the aggregate.
+    For a 2-level hierarchy (1 aggregate, N bottom-level series), the
+    MinT-WLS reconciled bottom-level forecasts distribute the discrepancy
+    (aggregate − bottom-up sum) across series inversely proportional to
+    their forecast error variances.
 
-    If aggregate forecast is unavailable, returns forecasts unchanged.
+    Each series i gets adjustment:
+        δ_i = (1/σ²_i) / Σ_j(1/σ²_j) × (agg − bottom_up)
+
+    This gives more weight to series with lower error variance, producing
+    a coherent set of forecasts that sum exactly to the aggregate.
     """
     agg_path = _PROCESSED / f"forecast_{card_type}.parquet"
     if not agg_path.exists():
@@ -686,45 +732,65 @@ def _reconcile_mint(
     agg_fc = pd.read_parquet(agg_path)
     agg_fc["date"] = pd.to_datetime(agg_fc["date"]).dt.to_period("M").dt.to_timestamp()
 
-    # Bottom-up total
+    # Bottom-up total (all bottom-level series including residual)
     all_fc = bank_forecasts + [residual_fc]
     combined = pd.concat(all_fc, ignore_index=True)
     bottom_up = combined.groupby("date")["forecast"].sum().reset_index()
     bottom_up.columns = ["date", "bottom_up"]
 
-    # Merge with aggregate (aggregate is in lakh, bank forecasts in cards)
-    # Convert aggregate lakh to cards for comparison
+    # Aggregate forecast (lakh → cards)
     agg_col = "forecast_lakh" if "forecast_lakh" in agg_fc.columns else "forecast"
     agg_subset = agg_fc[["date", agg_col]].copy()
     agg_subset.columns = ["date", "aggregate"]
     agg_subset["aggregate_cards"] = agg_subset["aggregate"] * 1e5
 
     merged = bottom_up.merge(agg_subset[["date", "aggregate_cards"]], on="date", how="inner")
-
     if merged.empty:
         logger.info(f"  [{card_type.upper()}] No date overlap for reconciliation")
         return bank_forecasts
 
-    # Compute scaling factors per date
-    merged["scale"] = merged["aggregate_cards"] / merged["bottom_up"]
-    merged["scale"] = merged["scale"].clip(0.5, 2.0)  # cap extreme adjustments
-    scale_map = dict(zip(merged["date"], merged["scale"]))
+    discrepancy_map = dict(zip(
+        merged["date"],
+        merged["aggregate_cards"] - merged["bottom_up"],
+    ))
 
-    # Apply proportional scaling to each bank
-    reconciled = []
+    # Estimate per-series forecast error variance (WLS weights)
+    histories = bank_histories or {}
+    variances = []
     for fc in bank_forecasts:
+        bname = fc["bank_name"].iloc[0] if "bank_name" in fc.columns else ""
+        hist = histories.get(bname)
+        variances.append(_estimate_insample_variance(fc, hist))
+    variances.append(_estimate_insample_variance(residual_fc, histories.get("_residual")))
+
+    inv_var = np.array([1.0 / v for v in variances])
+    inv_var_sum = inv_var.sum()
+    # Proportion of discrepancy each series absorbs
+    weights = inv_var / inv_var_sum  # sums to 1
+
+    # Apply MinT adjustment to bank forecasts (not residual — it adjusts implicitly)
+    reconciled = []
+    bank_weights = weights[:-1]
+    residual_weight = weights[-1]
+
+    for i, fc in enumerate(bank_forecasts):
         fc_r = fc.copy()
-        for col in ["forecast", "forecast_lower", "forecast_upper"]:
-            fc_r[col] = fc_r.apply(
-                lambda row: row[col] * scale_map.get(row["date"], 1.0), axis=1
-            )
+        w_i = bank_weights[i]
+        for _, row_idx in enumerate(fc_r.index):
+            d = fc_r.at[row_idx, "date"]
+            delta = discrepancy_map.get(d, 0.0) * w_i
+            fc_r.at[row_idx, "forecast"] += delta
+            fc_r.at[row_idx, "forecast_lower"] += delta
+            fc_r.at[row_idx, "forecast_upper"] += delta
         reconciled.append(fc_r)
 
-    n_dates = len(scale_map)
-    avg_scale = np.mean(list(scale_map.values()))
+    n_dates = len(discrepancy_map)
+    avg_disc = np.mean(np.abs(list(discrepancy_map.values())))
+    max_w = float(bank_weights.max())
     logger.info(
-        f"  [{card_type.upper()}] MinT reconciliation applied: "
-        f"{n_dates} dates, avg scale factor {avg_scale:.3f}"
+        f"  [{card_type.upper()}] MinT reconciliation: "
+        f"{n_dates} dates, avg |discrepancy| {avg_disc:,.0f} cards, "
+        f"max bank weight {max_w:.3f}, residual weight {residual_weight:.3f}"
     )
     return reconciled
 
@@ -918,6 +984,7 @@ def run_bank_model(
 
     bank_forecasts: list[pd.DataFrame] = []
     cv_results:     list[dict]         = []
+    bank_histories: dict[str, pd.DataFrame] = {}
 
     # Fit individual bank models
     for bank_name in top_banks:
@@ -951,11 +1018,22 @@ def run_bank_model(
         fc = _forecast_bank(model, df, bank_name, card_type, bank_dir)
         bank_forecasts.append(fc)
 
+        # Collect in-sample fit for MinT variance estimation
+        safe = bank_name.lower().replace(" ", "_").replace(".", "").replace("/", "_")
+        full_path = bank_dir / f"{card_type}_{safe}_full.parquet"
+        if full_path.exists():
+            bank_histories[bank_name] = pd.read_parquet(full_path)
+
     # Residual model
     residual_fc = _run_residual_model(residual_df, card_type, bank_dir)
 
+    # Collect residual history for MinT
+    res_full = bank_dir / f"{card_type}_residual_full.parquet"
+    if res_full.exists():
+        bank_histories["_residual"] = pd.read_parquet(res_full)
+
     # MinT reconciliation (P2.4) — adjust bank forecasts to match aggregate
-    bank_forecasts = _reconcile_mint(bank_forecasts, residual_fc, card_type)
+    bank_forecasts = _reconcile_mint(bank_forecasts, residual_fc, card_type, bank_histories)
 
     # Aggregate
     groundup = _aggregate_groundup(bank_forecasts, residual_fc, card_type, groundup_dir)

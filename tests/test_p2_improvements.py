@@ -191,6 +191,39 @@ class TestP2_4_MinT:
         from src.modelling.bank_model import _reconcile_mint
         assert callable(_reconcile_mint)
 
+    def test_estimate_insample_variance_with_history(self):
+        from src.modelling.bank_model import _estimate_insample_variance
+        fc = pd.DataFrame({"forecast": [100, 110, 120], "date": pd.date_range("2026-01", periods=3, freq="MS")})
+        hist = pd.DataFrame({
+            "date": pd.date_range("2025-01", periods=12, freq="MS"),
+            "yhat": np.arange(100, 112, dtype=float),
+            "actual": np.arange(100, 112, dtype=float) + np.array([1, -2, 3, -1, 2, -3, 1, -1, 2, -2, 1, -1]),
+        })
+        var = _estimate_insample_variance(fc, hist)
+        assert var > 1.0
+
+    def test_estimate_insample_variance_no_history(self):
+        from src.modelling.bank_model import _estimate_insample_variance
+        fc = pd.DataFrame({"forecast": [100, 200, 300]})
+        var = _estimate_insample_variance(fc, None)
+        assert var > 0
+
+    def test_mint_distributes_discrepancy_by_variance(self):
+        """Series with lower variance should absorb more of the discrepancy."""
+        from src.modelling.bank_model import _estimate_insample_variance
+        dates = pd.date_range("2026-01", periods=3, freq="MS")
+        bank_a = pd.DataFrame({"date": dates, "forecast": [50.0, 50, 50], "forecast_lower": [40.0]*3, "forecast_upper": [60.0]*3, "bank_name": "A", "card_type": "cc"})
+        bank_b = pd.DataFrame({"date": dates, "forecast": [50.0, 50, 50], "forecast_lower": [40.0]*3, "forecast_upper": [60.0]*3, "bank_name": "B", "card_type": "cc"})
+        residual = pd.DataFrame({"date": dates, "forecast": [0.0]*3, "forecast_lower": [0.0]*3, "forecast_upper": [0.0]*3, "bank_name": "_RESIDUAL", "card_type": "cc"})
+
+        # History: bank A has low variance, bank B has high variance
+        hist_a = pd.DataFrame({"date": pd.date_range("2025-01", periods=12, freq="MS"), "yhat": np.ones(12)*50, "actual": np.ones(12)*50 + np.random.RandomState(0).normal(0, 1, 12)})
+        hist_b = pd.DataFrame({"date": pd.date_range("2025-01", periods=12, freq="MS"), "yhat": np.ones(12)*50, "actual": np.ones(12)*50 + np.random.RandomState(1).normal(0, 10, 12)})
+
+        var_a = _estimate_insample_variance(bank_a, hist_a)
+        var_b = _estimate_insample_variance(bank_b, hist_b)
+        assert var_a < var_b, "Bank A should have lower variance"
+
 
 # ===================================================================
 # P2.7: Scale-independent metrics
