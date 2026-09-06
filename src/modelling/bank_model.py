@@ -485,6 +485,55 @@ def _build_bank_conformal_ci(
     return lower, upper
 
 
+BANK_DIRECT_BLEND_WEIGHT = 0.20
+
+
+def _fit_bank_direct_multihorizon(
+    y: np.ndarray, horizon: int, use_log: bool = False,
+) -> np.ndarray | None:
+    """Direct multi-horizon ARIMA for bank-level forecasts (P2.6).
+
+    Same approach as aggregate: separate ARIMA models for short/medium/long
+    horizons with smooth blending at boundaries. Reduces error accumulation
+    vs single recursive Prophet/ETS at longer horizons.
+    """
+    from statsmodels.tsa.arima.model import ARIMA
+
+    if len(y) < 36:
+        return None
+
+    segments = [(0, 6, (1, 1, 1)), (6, horizon, (1, 1, 0))]
+    fc = np.zeros(horizon)
+    blend_width = 2
+
+    for seg_start, seg_end, order in segments:
+        if seg_start >= horizon:
+            break
+        seg_end = min(seg_end, horizon)
+        try:
+            y_fit = np.log1p(y) if use_log else y.copy()
+            m = ARIMA(y_fit, order=order)
+            fit = m.fit()
+            seg_fc = fit.forecast(steps=seg_end)
+            if use_log:
+                seg_fc = np.expm1(seg_fc)
+
+            if seg_start == 0:
+                fc[:seg_end] = seg_fc[:seg_end]
+            else:
+                blend_start = max(seg_start - blend_width, 0)
+                for h in range(blend_start, seg_end):
+                    if h < seg_start:
+                        alpha = (h - blend_start) / blend_width
+                        fc[h] = (1 - alpha) * fc[h] + alpha * seg_fc[h]
+                    else:
+                        fc[h] = seg_fc[h]
+        except Exception:
+            return None
+
+    return np.clip(fc, 0, None)
+
+
 def _forecast_bank(
     model,
     bank_df: pd.DataFrame,
@@ -553,6 +602,17 @@ def _forecast_bank(
     fc.columns = ["date", "forecast", "forecast_lower", "forecast_upper", "trend"]
     fc["bank_name"] = bank_name
     fc["card_type"] = card_type
+
+    # Blend with direct multi-horizon ARIMA (P2.6)
+    y_raw = bank_df["y"].values
+    if USE_LOG_TRANSFORM:
+        y_raw = np.expm1(y_raw)
+    direct_fc = _fit_bank_direct_multihorizon(y_raw, len(fc), use_log=False)
+    if direct_fc is not None:
+        w = BANK_DIRECT_BLEND_WEIGHT
+        for col in ["forecast", "forecast_lower", "forecast_upper"]:
+            fc[col] = (1 - w) * fc[col] + w * direct_fc[:len(fc)]
+        logger.debug(f"    Direct multi-horizon blended ({w:.0%}) for {bank_name}")
 
     # Override default CIs with conformal intervals when available
     conformal = _build_bank_conformal_ci(bank_df, card_type, len(fc))

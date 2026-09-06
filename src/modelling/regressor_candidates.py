@@ -284,7 +284,44 @@ def print_results(results: list[CandidateResult]) -> None:
     print()
 
 
+def save_results(results: list[CandidateResult], path: Path | None = None) -> Path:
+    """Save evaluation results to CSV for audit trail."""
+    out = path or _PROCESSED / "regressor_candidate_results.csv"
+    rows = []
+    for r in results:
+        rows.append({
+            "candidate": r.candidate.name,
+            "column": r.candidate.col,
+            "target": r.target,
+            "lag": r.candidate.lag,
+            "mode": r.candidate.mode,
+            "granger_pvalue": r.granger_pvalue,
+            "granger_fstat": r.granger_fstat,
+            "granger_best_lag": r.granger_best_lag,
+            "passed": r.passed,
+            "verdict": r.verdict,
+        })
+    df = pd.DataFrame(rows)
+    df.to_csv(out, index=False)
+    logger.info(f"Results saved to {out}")
+    return out
+
+
 if __name__ == "__main__":
     import sys
     results = evaluate_candidates()
     print_results(results)
+    save_results(results)
+
+    if "--add" in sys.argv:
+        passed = [r for r in results if r.passed]
+        if not passed:
+            print("No candidates passed the Granger gate. No regressors added.")
+        else:
+            print(f"\n{len(passed)} candidate(s) passed. To add them:")
+            for r in passed:
+                print(
+                    f"  Add to {'CC' if 'credit' in r.target else 'DC'}_CONFIG regressors:\n"
+                    f"    RegressorSpec(col='{r.candidate.col}', standardize=True, "
+                    f"lag={r.candidate.lag}, fill_method='ffill', mode='{r.candidate.mode}')"
+                )
